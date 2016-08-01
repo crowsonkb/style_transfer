@@ -37,8 +37,8 @@ def normalize(arr):
 def gram_matrix(feat):
     n, mh, mw = feat.shape
     feat = feat.reshape((n, mh * mw))
-    return feat @ feat.T / feat.size
-
+    gram = feat @ feat.T / feat.size
+    return gram
 
 class LayerIndexer:
     def __init__(self, net, attr):
@@ -176,8 +176,9 @@ class Progress:
         this_t = time.perf_counter()
         self.step = step
         self.update_size = update_size
-        if step == 1 and self.url:
-            webbrowser.open(self.url)
+        if step == 1:
+            if self.url:
+                webbrowser.open(self.url)
         else:
             self.t = this_t - self.prev_t
         print('Step %d, time: %.2f s, update size: %.2f' % (step, self.t, update_size), flush=True)
