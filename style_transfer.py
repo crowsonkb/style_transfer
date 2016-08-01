@@ -264,7 +264,10 @@ def main():
     url = 'http://127.0.0.1:%d/' % args.port
     server = ProgressServer(server_address, ProgressHandler)
     server.model = model
-    server.progress = Progress(model, url=url, steps=args.iterations)
+    progress_args = {}
+    if not args.no_browser:
+        progress_args['url'] = url
+    server.progress = Progress(model, steps=args.iterations, **progress_args)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print('\nWatch the progress at: %s\n' % url)
 
