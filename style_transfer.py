@@ -152,32 +152,35 @@ class CaffeModel:
             # Adam update
             m1 = b1*m1 + (1-b1)*update
             m2 = b2*m2 + (1-b2)*update*update
-            self.data['data'] -= step_size * m1/(1-b1**step) / (np.sqrt(m2/(1-b2**step)) + EPS)
-            # self.data['data'] -= step_size * update
+            adam_update = step_size * m1/(1-b1**step) / (np.sqrt(m2/(1-b2**step)) + EPS)
+            self.data['data'] -= adam_update
+
             if callback is not None:
-                callback(step=step)
+                callback(step=step, update_size=np.sqrt(np.mean(adam_update**2)))
 
         return self.get_image()
 
 
 class Progress:
     prev_t = None
+    t = np.nan
     step = None
 
     def __init__(self, model, url=None, steps=-1):
         self.model = model
         self.url = url
         self.steps = steps
+        self.update_size=np.nan
 
-    def __call__(self, step=None):
+    def __call__(self, step=None, update_size=np.nan):
         this_t = time.perf_counter()
         self.step = step
-        if step == 1:
-            print('Step %d' % step, flush=True)
-            if self.url:
-                webbrowser.open(self.url)
+        self.update_size = update_size
+        if step == 1 and self.url:
+            webbrowser.open(self.url)
         else:
-            print('Step %d, time: %.2f s' % (step, this_t-self.prev_t), flush=True)
+            self.t = this_t - self.prev_t
+        print('Step %d, time: %.2f s, update size: %.2f' % (step, self.t, update_size), flush=True)
         self.prev_t = this_t
 
 
@@ -190,8 +193,8 @@ class ProgressHandler(BaseHTTPRequestHandler):
     index = """
     <meta http-equiv="refresh" content="5">
     <h1>style_transfer</h1>
-    <img src="/out.png">
-    <p>Step %(step)d/%(steps)d
+    <img src="/out.png" width="%(w)d" height="%(h)d">
+    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update size: %(update_size).2f
     """
 
     def do_GET(self):
@@ -202,6 +205,10 @@ class ProgressHandler(BaseHTTPRequestHandler):
             self.wfile.write((self.index % {
                 'step': self.server.progress.step,
                 'steps': self.server.progress.steps,
+                't': self.server.progress.t,
+                'update_size': self.server.progress.update_size,
+                'w': self.server.model.data['data'].shape[2],
+                'h': self.server.model.data['data'].shape[1],
             }).encode())
         elif self.path == '/out.png':
             self.send_response(200)
@@ -212,6 +219,20 @@ class ProgressHandler(BaseHTTPRequestHandler):
             self.wfile.write(buf.getvalue())
         else:
             self.send_error(404)
+
+
+def resize_to_fit(image, size):
+    size = round(size)
+    w, h = image.size
+    new_w, new_h = w, h
+    if w > h:
+        new_w = size
+        new_h = round(size * h/w)
+    else:
+        new_h = size
+        new_w = round(size * w/h)
+    return image.resize((new_w, new_h), Image.LANCZOS)
+
 
 def ffloat(s):
     return float(Fraction(s))
@@ -230,7 +251,7 @@ def parse_args():
         '-s', dest='step_size', type=ffloat, default=10,
         help='the step size (iteration strength)')
     parser.add_argument('--size', type=int, default=224, help='the maximum output size')
-    parser.add_argument('--style-size', type=int, default=224, help='the style size')
+    parser.add_argument('--style-scale', type=ffloat, default=1, help='the style scale factor')
     parser.add_argument(
         '-cw', dest='content_weight', type=ffloat, default=0.1, help='the content image factor')
     parser.add_argument(
@@ -262,8 +283,10 @@ def main():
     args = parse_args()
     content_image = Image.open(args.content_image).convert('RGB')
     style_image = Image.open(args.style_image).convert('RGB')
-    content_image = content_image.resize((args.size, args.size), Image.LANCZOS)
-    style_image = style_image.resize((args.style_size, args.style_size), Image.LANCZOS)
+    content_image = resize_to_fit(content_image, args.size)
+    style_image = resize_to_fit(style_image, args.size*args.style_scale)
+    print('Resized content image to %dx%d' % content_image.size)
+    print('Resized style image to %dx%d' % style_image.size)
 
     model = CaffeModel(args.model, args.model_weights, args.model_mean)
 
