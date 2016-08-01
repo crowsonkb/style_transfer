@@ -37,7 +37,7 @@ def normalize(arr):
 def gram_matrix(feat):
     n, mh, mw = feat.shape
     feat = feat.reshape((n, mh * mw))
-    return feat @ feat.T
+    return feat @ feat.T / feat.size
 
 
 class LayerIndexer:
@@ -130,10 +130,9 @@ class CaffeModel:
                     self.diff[layer] += normalize(c_grad)*content_weight
                 if layer in style_layers:
                     current_gram = gram_matrix(self.data[layer])
-                    c = 1 / self.data[layer].size**2
                     n, mh, mw = self.data[layer].shape
                     feat = self.data[layer].reshape((n, mh * mw))
-                    s_grad = c * (feat.T @ (current_gram - grams[layer])).T
+                    s_grad = (feat.T @ (current_gram - grams[layer])).T
                     s_grad = s_grad.reshape((n, mh, mw))
                     self.diff[layer] += normalize(s_grad)*style_weight
 
@@ -246,6 +245,16 @@ def parse_args():
     parser.add_argument(
         '-p', dest='port', type=int, default=8000, help='the port to use for the http server')
     parser.add_argument('--no-browser', action='store_true', help='don\'t open a web browser')
+    parser.add_argument(
+        '--model', default='VGG_ILSVRC_19_layers_deploy.prototxt',
+        help='the Caffe deploy.prototxt for the model to use')
+    parser.add_argument(
+        '--model-weights', default='VGG_ILSVRC_19_layers.caffemodel',
+        help='The Caffe .caffemodel for the model to use')
+    parser.add_argument(
+        '--model-mean', nargs=3, metavar=('B_MEAN', 'G_MEAN', 'R_MEAN'),
+        default=(103.939, 116.779, 123.68),
+        help='the per-channel means of the model (BGR order)')
     return parser.parse_args()
 
 
@@ -256,9 +265,7 @@ def main():
     content_image = content_image.resize((args.size, args.size), Image.LANCZOS)
     style_image = style_image.resize((args.style_size, args.style_size), Image.LANCZOS)
 
-    model = CaffeModel('VGG_ILSVRC_19_layers_deploy.prototxt',
-                       'VGG_ILSVRC_19_layers.caffemodel',
-                       (103.939, 116.779, 123.68))
+    model = CaffeModel(args.model, args.model_weights, args.model_mean)
 
     server_address = ('', args.port)
     url = 'http://127.0.0.1:%d/' % args.port
