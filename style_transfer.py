@@ -27,7 +27,7 @@ EPS = np.finfo(np.float32).eps
 
 
 def normalize(arr):
-    """Normalize an array such that the square of its l2 norm equals the number of elements."""
+    """Normalize an array such that its quadratic mean (RMS) is 1."""
     rms = np.sqrt(np.mean(arr*arr))
     if rms <= 0:
         rms = 1
