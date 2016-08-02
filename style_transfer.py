@@ -111,9 +111,12 @@ class CaffeModel:
         for layer in style_layers:
             grams[layer] = gram_matrix(self.data[layer])
 
-        # Initialize the model with a white noise image
+        # Initialize the model with a noise image
         w, h = content_image.size
-        self.set_image(np.random.uniform(0, 255, (h, w, 3)))
+        initial_image = np.random.normal(size=(h, w, 3))
+        initial_image *= np.std(style_image, axis=(0, 1), keepdims=True)
+        initial_image += np.mean(style_image, axis=(0, 1), keepdims=True)
+        self.set_image(initial_image)
         m1 = np.zeros((3, h, w), dtype=np.float32)
         m2 = np.zeros((3, h, w), dtype=np.float32)
 
@@ -151,7 +154,7 @@ class CaffeModel:
 
             # Adam update
             m1 = b1*m1 + (1-b1)*update
-            m2 = b2*m2 + (1-b2)*update*update
+            m2 = b2*m2 + (1-b2)*update**2
             adam_update = step_size * m1/(1-b1**step) / (np.sqrt(m2/(1-b2**step)) + EPS)
             self.data['data'] -= adam_update
 
@@ -242,7 +245,9 @@ def ffloat(s):
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        fromfile_prefix_chars='@')
+    parser.convert_arg_line_to_args = lambda arg_line: arg_line.split()
     parser.add_argument('content_image', help='the content image')
     parser.add_argument('style_image', help='the style image')
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
@@ -272,24 +277,32 @@ def parse_args():
         help='the Caffe deploy.prototxt for the model to use')
     parser.add_argument(
         '--model-weights', default='VGG_ILSVRC_19_layers.caffemodel',
-        help='The Caffe .caffemodel for the model to use')
+        help='the Caffe .caffemodel for the model to use')
     parser.add_argument(
         '--model-mean', nargs=3, metavar=('B_MEAN', 'G_MEAN', 'R_MEAN'),
         default=(103.939, 116.779, 123.68),
         help='the per-channel means of the model (BGR order)')
+    parser.add_argument(
+        '--list-layers', action='store_true', help='list the model\'s layers')
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+
+    model = CaffeModel(args.model, args.model_weights, args.model_mean)
+    if args.list_layers:
+        print('Layers:')
+        for layer in model.layers():
+            print('    %s' % layer)
+        sys.exit(0)
+
     content_image = Image.open(args.content_image).convert('RGB')
     style_image = Image.open(args.style_image).convert('RGB')
     content_image = resize_to_fit(content_image, args.size)
     style_image = resize_to_fit(style_image, args.size*args.style_scale)
     print('Resized content image to %dx%d' % content_image.size)
     print('Resized style image to %dx%d' % style_image.size)
-
-    model = CaffeModel(args.model, args.model_weights, args.model_mean)
 
     server_address = ('', args.port)
     url = 'http://127.0.0.1:%d/' % args.port
