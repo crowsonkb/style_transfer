@@ -27,11 +27,7 @@ EPS = np.finfo(np.float32).eps
 
 
 def normalize(arr):
-    """Normalize an array such that its quadratic mean (RMS) is 1."""
-    rms = np.sqrt(np.mean(arr*arr))
-    if rms <= 0:
-        rms = 1
-    return arr / rms
+    return arr / (np.mean(np.abs(arr)) + EPS)
 
 
 def gram_matrix(feat):
@@ -39,6 +35,7 @@ def gram_matrix(feat):
     feat = feat.reshape((n, mh * mw))
     gram = feat @ feat.T / feat.size
     return gram
+
 
 class LayerIndexer:
     def __init__(self, net, attr):
@@ -147,19 +144,19 @@ class CaffeModel:
 
             # Compute total variation gradient
             tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
-            tv = convolve(self.data['data'], tv_kernel)
+            tv = convolve(self.data['data'], tv_kernel)/255
 
             # Compute a weighted sum of normalized gradients
-            update = normalize(self.diff['data']) + tv_weight*normalize(tv)
+            grad = normalize(self.diff['data']) + tv_weight*tv
 
             # Adam update
-            m1 = b1*m1 + (1-b1)*update
-            m2 = b2*m2 + (1-b2)*update**2
-            adam_update = step_size * m1/(1-b1**step) / (np.sqrt(m2/(1-b2**step)) + EPS)
-            self.data['data'] -= adam_update
+            m1 = b1*m1 + (1-b1)*grad
+            m2 = b2*m2 + (1-b2)*grad**2
+            update = step_size * m1/(1-b1**step) / (np.sqrt(m2/(1-b2**step)) + EPS)
+            self.data['data'] -= update
 
             if callback is not None:
-                callback(step=step, update_size=np.sqrt(np.mean(adam_update**2)))
+                callback(step=step, update_size=np.mean(np.abs(update)))
 
         return self.get_image()
 
@@ -173,7 +170,7 @@ class Progress:
         self.model = model
         self.url = url
         self.steps = steps
-        self.update_size=np.nan
+        self.update_size = np.nan
 
     def __call__(self, step=None, update_size=np.nan):
         this_t = time.perf_counter()
@@ -261,7 +258,7 @@ def parse_args():
     parser.add_argument(
         '-cw', dest='content_weight', type=ffloat, default=0.1, help='the content image factor')
     parser.add_argument(
-        '-tw', dest='tv_weight', type=ffloat, default=0.1, help='the smoothing factor')
+        '-tw', dest='tv_weight', type=ffloat, default=0.2, help='the smoothing factor')
     parser.add_argument(
         '--content-layers', nargs='*', default=['conv4_2'], metavar='LAYER',
         help='the layers to use for content')
