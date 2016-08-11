@@ -258,7 +258,7 @@ def parse_args():
     parser.add_argument(
         '-cw', dest='content_weight', type=ffloat, default=0.1, help='the content image factor')
     parser.add_argument(
-        '-tw', dest='tv_weight', type=ffloat, default=0.2, help='the smoothing factor')
+        '-tw', dest='tv_weight', type=ffloat, default=1, help='the smoothing factor')
     parser.add_argument(
         '--content-layers', nargs='*', default=['conv4_2'], metavar='LAYER',
         help='the layers to use for content')
