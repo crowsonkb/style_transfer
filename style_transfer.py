@@ -250,7 +250,6 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         fromfile_prefix_chars='@')
-    parser.convert_arg_line_to_args = lambda arg_line: arg_line.split()
     parser.add_argument('content_image', help='the content image')
     parser.add_argument('style_image', help='the style image')
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
