@@ -110,9 +110,9 @@ class CaffeModel:
 
         # Initialize the model with a noise image
         w, h = content_image.size
-        initial_image = np.random.normal(size=(h, w, 3))
-        initial_image *= np.std(style_image, axis=(0, 1), keepdims=True)
-        initial_image += np.mean(style_image, axis=(0, 1), keepdims=True)
+        initial_image = np.random.uniform(0, 255, size=(h, w, 3))
+        # initial_image *= np.std(style_image, axis=(0, 1), keepdims=True)
+        # initial_image += np.mean(style_image, axis=(0, 1), keepdims=True)
         self.set_image(initial_image)
         m1 = np.zeros((3, h, w), dtype=np.float32)
         m2 = np.zeros((3, h, w), dtype=np.float32)
