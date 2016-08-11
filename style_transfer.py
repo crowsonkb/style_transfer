@@ -193,8 +193,14 @@ class ProgressServer(ThreadingMixIn, HTTPServer):
 class ProgressHandler(BaseHTTPRequestHandler):
     index = """
     <meta http-equiv="refresh" content="5">
-    <h1>style_transfer</h1>
-    <img src="/out.png" width="%(w)d" height="%(h)d">
+    <style>
+    body {
+        background-color: rgb(55, 55, 55);
+        color: rgb(255, 255, 255);
+    }
+    #out {image-rendering: -webkit-optimize-contrast;}</style>
+    <h1>Style transfer</h1>
+    <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
     <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update size: %(update_size).2f
     """
 
