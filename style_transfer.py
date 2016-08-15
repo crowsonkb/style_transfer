@@ -19,9 +19,6 @@ import numpy as np
 from PIL import Image
 from scipy.ndimage import convolve
 
-os.environ['GLOG_minloglevel'] = '2'
-import caffe  # pylint: disable=wrong-import-position
-
 # Machine epsilon for float32
 EPS = np.finfo(np.float32).eps
 
@@ -50,6 +47,7 @@ class LayerIndexer:
 
 class CaffeModel:
     def __init__(self, deploy, weights, mean=(0, 0, 0), bgr=True):
+        import caffe
         self.mean = np.float32(mean)[..., None, None]
         assert self.mean.ndim == 3
         self.bgr = bgr
@@ -82,7 +80,7 @@ class CaffeModel:
         return layers
 
     def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
-                 step_size=1, content_weight=1, style_weight=1, tv_weight=0, callback=None):
+                 step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None):
         b1, b2 = 0.9, 0.9
 
         content_weight /= max(len(content_layers), 1)
@@ -110,10 +108,7 @@ class CaffeModel:
 
         # Initialize the model with a noise image
         w, h = content_image.size
-        initial_image = np.random.uniform(0, 255, size=(h, w, 3))
-        # initial_image *= np.std(style_image, axis=(0, 1), keepdims=True)
-        # initial_image += np.mean(style_image, axis=(0, 1), keepdims=True)
-        self.set_image(initial_image)
+        self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
         m1 = np.zeros((3, h, w), dtype=np.float32)
         m2 = np.zeros((3, h, w), dtype=np.float32)
 
@@ -149,7 +144,7 @@ class CaffeModel:
             # Compute a weighted sum of normalized gradients
             grad = normalize(self.diff['data']) + tv_weight*tv
 
-            # Adam update
+            # Gradient descent update
             m1 = b1*m1 + (1-b1)*grad
             m2 = b2*m2 + (1-b2)*grad**2
             update = step_size * m1/(1-b1**step) / (np.sqrt(m2/(1-b2**step)) + EPS)
@@ -166,16 +161,19 @@ class Progress:
     t = np.nan
     step = None
 
-    def __init__(self, model, url=None, steps=-1):
+    def __init__(self, model, url=None, steps=-1, save_every=0):
         self.model = model
         self.url = url
         self.steps = steps
+        self.save_every = save_every
         self.update_size = np.nan
 
-    def __call__(self, step=None, update_size=np.nan):
+    def __call__(self, step=-1, update_size=np.nan):
         this_t = time.perf_counter()
         self.step = step
         self.update_size = update_size
+        if self.save_every and self.step % self.save_every == 0:
+            self.model.get_image().save('out_%04d.png' % self.step)
         if step == 1:
             if self.url:
                 webbrowser.open(self.url)
@@ -248,22 +246,22 @@ def ffloat(s):
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        fromfile_prefix_chars='@')
+        description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('content_image', help='the content image')
     parser.add_argument('style_image', help='the style image')
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
     parser.add_argument(
-        '-i', dest='iterations', type=int, default=500, help='the number of iterations')
+        '--iterations', '-i', type=int, default=250, help='the number of iterations')
     parser.add_argument(
-        '-s', dest='step_size', type=ffloat, default=10,
-        help='the step size (iteration strength)')
-    parser.add_argument('--size', type=int, default=224, help='the maximum output size')
-    parser.add_argument('--style-scale', type=ffloat, default=1, help='the style scale factor')
+        '--step-size', '-st', type=ffloat, default=10, help='the step size (iteration strength)')
     parser.add_argument(
-        '-cw', dest='content_weight', type=ffloat, default=0.1, help='the content image factor')
+        '--size', '-s', type=int, default=224, help='the maximum output size')
     parser.add_argument(
-        '-tw', dest='tv_weight', type=ffloat, default=1, help='the smoothing factor')
+        '--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor')
+    parser.add_argument(
+        '--content-weight', '-cw', type=ffloat, default=0.1, help='the content image factor')
+    parser.add_argument(
+        '--tv-weight', '-tw', type=ffloat, default=1, help='the smoothing factor')
     parser.add_argument(
         '--content-layers', nargs='*', default=['conv4_2'], metavar='LAYER',
         help='the layers to use for content')
@@ -272,31 +270,48 @@ def parse_args():
         default=['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1'],
         help='the layers to use for style')
     parser.add_argument(
-        '-p', dest='port', type=int, default=8000, help='the port to use for the http server')
-    parser.add_argument('--no-browser', action='store_true', help='don\'t open a web browser')
+        '--port', '-p', type=int, default=8000,
+        help='the port to use for the http server')
+    parser.add_argument(
+        '--no-browser', action='store_true', help='don\'t open a web browser')
     parser.add_argument(
         '--model', default='VGG_ILSVRC_19_layers_deploy.prototxt',
         help='the Caffe deploy.prototxt for the model to use')
     parser.add_argument(
-        '--model-weights', default='VGG_ILSVRC_19_layers.caffemodel',
+        '--weights', default='VGG_ILSVRC_19_layers.caffemodel',
         help='the Caffe .caffemodel for the model to use')
     parser.add_argument(
-        '--model-mean', nargs=3, metavar=('B_MEAN', 'G_MEAN', 'R_MEAN'),
+        '--mean', nargs=3, metavar=('B_MEAN', 'G_MEAN', 'R_MEAN'),
         default=(103.939, 116.779, 123.68),
         help='the per-channel means of the model (BGR order)')
     parser.add_argument(
         '--list-layers', action='store_true', help='list the model\'s layers')
+    parser.add_argument(
+        '--save-every', metavar='N', type=int, default=0, help='save the image every n steps'
+    )
+    parser.add_argument(
+        '--gpu', type=int, default=0, help='gpu number to use (-1 for cpu)'
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
 
-    model = CaffeModel(args.model, args.model_weights, args.model_mean)
+    os.environ['GLOG_minloglevel'] = '2'
+    if args.gpu == -1:
+        import caffe
+        caffe.set_mode_cpu()
+    else:
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
+        import caffe
+        caffe.set_mode_gpu()
+
+    model = CaffeModel(args.model, args.weights, args.mean)
     if args.list_layers:
         print('Layers:')
         for layer in model.layers():
-            print('    %s' % layer)
+            print('    %s, size=%s' % (layer, model.data[layer].shape))
         sys.exit(0)
 
     content_image = Image.open(args.content_image).convert('RGB')
@@ -313,11 +328,11 @@ def main():
     progress_args = {}
     if not args.no_browser:
         progress_args['url'] = url
-    server.progress = Progress(model, steps=args.iterations, **progress_args)
+    server.progress = Progress(
+        model, steps=args.iterations, save_every=args.save_every, **progress_args)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print('\nWatch the progress at: %s\n' % url)
 
-    caffe.set_mode_gpu()  # FIXME: add an argument
     caffe.set_random_seed(0)
     np.random.seed(0)
     try:
