@@ -45,6 +45,36 @@ class LayerIndexer:
         getattr(self.net.blobs[key], self.attr)[0] = value
 
 
+class AdamOptimizer:
+    """Implements the Adam gradient descent optimizer with Nesterov momentum.
+
+    References:
+        https://arxiv.org/abs/1412.6980 (Adam: A Method for Stochastic Optimization)
+        http://cs229.stanford.edu/proj2015/054_report.pdf (Incorporating Nesterov Momentum into
+            Adam)
+    """
+    def __init__(self, shape, dtype=np.float32, step_size=1, b1=0.9, b2=0.9):
+        """Initializes the optimizer."""
+        self.step_size = step_size
+        self.b1 = b1
+        self.b2 = b2
+        self.step = 1
+        self.m1 = np.zeros(shape, dtype)
+        self.m2 = np.zeros(shape, dtype)
+
+    def update(self, grad):
+        """Returns a step's parameter update given its gradient."""
+        self.m1 = self.b1*self.m1 + (1-self.b1)*grad
+        self.m2 = self.b2*self.m2 + (1-self.b2)*grad**2
+        m1_unbiased = self.m1 / (1-self.b1**self.step)
+        m2_unbiased = self.m2 / (1-self.b2**self.step)
+        grad_unbiased = grad / (1-self.b1**self.step)
+        m1_unbiased = self.b1*m1_unbiased + (1-self.b1)*grad_unbiased
+        update = self.step_size * m1_unbiased / (np.sqrt(m2_unbiased) + EPS)
+        self.step += 1
+        return update
+
+
 class CaffeModel:
     def __init__(self, deploy, weights, mean=(0, 0, 0), bgr=True):
         import caffe
@@ -79,13 +109,7 @@ class CaffeModel:
                 layers.append(layer)
         return layers
 
-    def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
-                 step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None):
-        b1, b2 = 0.9, 0.9
-
-        content_weight /= max(len(content_layers), 1)
-        style_weight /= max(len(style_layers), 1)
-
+    def preprocess_images(self, content_image, style_image, content_layers, style_layers):
         # Construct list of layers to visit during the backward pass
         layers = []
         for layer in reversed(self.layers()):
@@ -106,11 +130,20 @@ class CaffeModel:
         for layer in style_layers:
             grams[layer] = gram_matrix(self.data[layer])
 
+        return layers, features, grams
+
+    def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
+                 step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None):
+        content_weight /= max(len(content_layers), 1)
+        style_weight /= max(len(style_layers), 1)
+
+        layers, features, grams = self.preprocess_images(
+            content_image, style_image, content_layers, style_layers)
+
         # Initialize the model with a noise image
         w, h = content_image.size
         self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
-        m1 = np.zeros((3, h, w), dtype=np.float32)
-        m2 = np.zeros((3, h, w), dtype=np.float32)
+        optimizer = AdamOptimizer((3, h, w), dtype=np.float32, step_size=step_size)
 
         for step in range(1, iterations+1):
             # Prepare gradient buffers and run the model forward
@@ -127,7 +160,7 @@ class CaffeModel:
                     current_gram = gram_matrix(self.data[layer])
                     n, mh, mw = self.data[layer].shape
                     feat = self.data[layer].reshape((n, mh * mw))
-                    s_grad = (feat.T @ (current_gram - grams[layer])).T
+                    s_grad = (current_gram - grams[layer]).T @ feat
                     s_grad = s_grad.reshape((n, mh, mw))
                     self.diff[layer] += normalize(s_grad)*style_weight
 
@@ -139,17 +172,14 @@ class CaffeModel:
 
             # Compute total variation gradient
             tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
-            tv = convolve(self.data['data'], tv_kernel)/255
+            tv_grad = convolve(self.data['data'], tv_kernel)/255
 
             # Compute a weighted sum of normalized gradients
-            grad = normalize(self.diff['data']) + tv_weight*tv
+            grad = normalize(self.diff['data']) + tv_weight*tv_grad
 
             # Gradient descent update
-            m1 = b1*m1 + (1-b1)*grad
-            m2 = b2*m2 + (1-b2)*grad**2
-            update = step_size * m1/(1-b1**step) / (np.sqrt(m2/(1-b2**step)) + EPS)
+            update = optimizer.update(grad)
             self.data['data'] -= update
-
             if callback is not None:
                 callback(step=step, update_size=np.mean(np.abs(update)))
 
