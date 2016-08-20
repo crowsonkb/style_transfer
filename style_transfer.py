@@ -285,11 +285,11 @@ def parse_args():
     parser.add_argument(
         '--step-size', '-st', type=ffloat, default=10, help='the step size (iteration strength)')
     parser.add_argument(
-        '--size', '-s', type=int, default=224, help='the maximum output size')
+        '--size', '-s', type=int, default=256, help='the maximum output size')
     parser.add_argument(
         '--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor')
     parser.add_argument(
-        '--content-weight', '-cw', type=ffloat, default=0.1, help='the content image factor')
+        '--content-weight', '-cw', type=ffloat, default=0.05, help='the content image factor')
     parser.add_argument(
         '--tv-weight', '-tw', type=ffloat, default=1, help='the smoothing factor')
     parser.add_argument(
@@ -297,7 +297,7 @@ def parse_args():
         help='the layers to use for content')
     parser.add_argument(
         '--style-layers', nargs='*', metavar='LAYER',
-        default=['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1'],
+        default=['pool1', 'pool2', 'pool3', 'pool4'],
         help='the layers to use for style')
     parser.add_argument(
         '--port', '-p', type=int, default=8000,
