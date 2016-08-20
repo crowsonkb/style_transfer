@@ -172,7 +172,7 @@ class CaffeModel:
 
             # Compute total variation gradient
             tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
-            tv_grad = convolve(self.data['data'], tv_kernel)/255
+            tv_grad = convolve(self.data['data'], tv_kernel, mode='nearest')/255
 
             # Compute a weighted sum of normalized gradients
             grad = normalize(self.diff['data']) + tv_weight*tv_grad
