@@ -64,15 +64,29 @@ class AdamOptimizer:
 
     def update(self, grad):
         """Returns a step's parameter update given its gradient."""
+        assert grad.shape == self.m1.shape
         self.m1 = self.b1*self.m1 + (1-self.b1)*grad
         self.m2 = self.b2*self.m2 + (1-self.b2)*grad**2
-        m1_unbiased = self.m1 / (1-self.b1**self.step)
+        m1_unbiased = (self.b1*self.m1 + (1-self.b1)*grad) / (1-self.b1**self.step)
         m2_unbiased = self.m2 / (1-self.b2**self.step)
-        grad_unbiased = grad / (1-self.b1**self.step)
-        m1_unbiased = self.b1*m1_unbiased + (1-self.b1)*grad_unbiased
         update = self.step_size * m1_unbiased / (np.sqrt(m2_unbiased) + EPS)
         self.step += 1
         return update
+
+
+def _tv_grad():
+    import theano
+    import theano.tensor as T
+    img = T.ftensor3('img')
+    h = T.zeros_like(img)
+    h = T.set_subtensor(h[:, :, 0:-1], img[:, :, 0:-1] - img[:, :, 1:])
+    v = T.zeros_like(img)
+    v = T.set_subtensor(v[:, 0:-1, :], img[:, 0:-1, :] - img[:, 1:, :])
+    mag = T.sqrt(h*h + v*v + EPS*EPS)
+    grad = T.grad(mag.sum(), img)
+    return theano.function([img], grad)
+
+tv_grad = _tv_grad()
 
 
 class CaffeModel:
@@ -170,12 +184,8 @@ class CaffeModel:
                 else:
                     self.net.backward(start=layer, end=layers[i+1])
 
-            # Compute total variation gradient
-            tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
-            tv_grad = convolve(self.data['data'], tv_kernel, mode='nearest')/255
-
             # Compute a weighted sum of normalized gradients
-            grad = normalize(self.diff['data']) + tv_weight*tv_grad
+            grad = normalize(self.diff['data']) + tv_weight*tv_grad(self.data['data'])
 
             # Gradient descent update
             update = optimizer.update(grad)
