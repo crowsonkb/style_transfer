@@ -24,10 +24,12 @@ EPS = np.finfo(np.float32).eps
 
 
 def normalize(arr):
+    """Normalizes an array to have mean 1."""
     return arr / (np.mean(np.abs(arr)) + EPS)
 
 
 def gram_matrix(feat):
+    """Computes the Gram matrix corresponding to a feature map."""
     n, mh, mw = feat.shape
     feat = feat.reshape((n, mh * mw))
     gram = feat @ feat.T / feat.size
@@ -35,6 +37,7 @@ def gram_matrix(feat):
 
 
 class LayerIndexer:
+    """Helper class for accessing feature maps and gradients."""
     def __init__(self, net, attr):
         self.net, self.attr = net, attr
 
@@ -46,8 +49,9 @@ class LayerIndexer:
 
 
 class Optimizer:
+    """A gradient descent optimizer."""
     def __init__(self, shape, dtype=np.float32, step_size=1, b1=0.9, b2=0.9):
-        """Initializes the optimizer."""
+        """Initializes an optimizer with the given parameter array shape, dtype, and options."""
         self.step_size = step_size
         self.b1 = b1
         self.b2 = b2
@@ -68,6 +72,7 @@ class Optimizer:
 
 
 class CaffeModel:
+    """A Caffe neural network model."""
     def __init__(self, deploy, weights, mean=(0, 0, 0), bgr=True):
         import caffe
         self.mean = np.float32(mean)[..., None, None]
@@ -78,6 +83,7 @@ class CaffeModel:
         self.diff = LayerIndexer(self.net, 'diff')
 
     def get_image(self):
+        """Gets the current model input as a PIL image."""
         arr = self.data['data'] + self.mean
         if self.bgr:
             arr = arr[::-1]
@@ -85,6 +91,7 @@ class CaffeModel:
         return Image.fromarray(np.uint8(np.clip(arr, 0, 255)))
 
     def set_image(self, img):
+        """Sets the current model input to a PIL image."""
         arr = np.float32(img).transpose((2, 0, 1))
         if self.bgr:
             arr = arr[::-1]
@@ -102,6 +109,7 @@ class CaffeModel:
         return layers
 
     def preprocess_images(self, content_image, style_image, content_layers, style_layers):
+        """Performs preprocessing tasks on the input images."""
         # Construct list of layers to visit during the backward pass
         layers = []
         for layer in reversed(self.layers()):
@@ -126,6 +134,7 @@ class CaffeModel:
 
     def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
                  step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None):
+        """Performs style transfer from style_image to content_image."""
         content_weight /= max(len(content_layers), 1)
         style_weight /= max(len(style_layers), 1)
 
@@ -179,6 +188,7 @@ class CaffeModel:
 
 
 class Progress:
+    """A helper class for keeping track of progress."""
     prev_t = None
     t = np.nan
     step = None
@@ -206,11 +216,13 @@ class Progress:
 
 
 class ProgressServer(ThreadingMixIn, HTTPServer):
+    """HTTP server class."""
     model = None
     progress = None
 
 
 class ProgressHandler(BaseHTTPRequestHandler):
+    """Serves intermediate outputs over HTTP."""
     index = """
     <meta http-equiv="refresh" content="5">
     <style>
@@ -225,6 +237,7 @@ class ProgressHandler(BaseHTTPRequestHandler):
     """
 
     def do_GET(self):
+        """Retrieves index.html or an intermediate output."""
         if self.path == '/':
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
@@ -249,6 +262,7 @@ class ProgressHandler(BaseHTTPRequestHandler):
 
 
 def resize_to_fit(image, size):
+    """Resizes image to fit into a size-by-size square."""
     size = round(size)
     w, h = image.size
     new_w, new_h = w, h
@@ -262,11 +276,12 @@ def resize_to_fit(image, size):
 
 
 def ffloat(s):
+    """Parses fractional or floating point input strings."""
     return float(Fraction(s))
 
 
 def parse_args():
-    """Parse command line arguments."""
+    """Parses command line arguments."""
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('content_image', help='the content image')
@@ -318,6 +333,7 @@ def parse_args():
 
 
 def main():
+    """CLI interface for style transfer."""
     args = parse_args()
 
     os.environ['GLOG_minloglevel'] = '2'
