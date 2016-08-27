@@ -49,26 +49,32 @@ class LayerIndexer:
 
 
 class Optimizer:
-    """A gradient descent optimizer."""
+    """Implements the Adam gradient descent optimizer with Nesterov momentum.
+    References:
+        https://arxiv.org/abs/1412.6980 (Adam: A Method for Stochastic Optimization)
+        http://cs229.stanford.edu/proj2015/054_report.pdf (Incorporating Nesterov Momentum into
+            Adam)
+    """
     def __init__(self, shape, dtype=np.float32, step_size=1, b1=0.9, b2=0.9):
-        """Initializes an optimizer with the given parameter array shape, dtype, and options."""
+        """Initializes the optimizer."""
         self.step_size = step_size
         self.b1 = b1
         self.b2 = b2
         self.step = 1
         self.m1 = np.zeros(shape, dtype)
         self.m2 = np.zeros(shape, dtype)
-        self.u2 = np.ones(shape, dtype)
 
     def update(self, grad):
         """Returns a step's parameter update given its gradient."""
         self.m1 = self.b1*self.m1 + (1-self.b1)*grad
-        m1_est = self.b1*self.m1 + (1-self.b1)*grad
         self.m2 = self.b2*self.m2 + (1-self.b2)*grad**2
-        update = m1_est * np.sqrt(self.u2 + EPS) / np.sqrt(self.m2 + EPS)
-        self.u2 = self.b2*self.u2 + (1-self.b2)*update**2
+        m1_unbiased = self.m1 / (1-self.b1**self.step)
+        m2_unbiased = self.m2 / (1-self.b2**self.step)
+        grad_unbiased = grad / (1-self.b1**self.step)
+        m1_unbiased = self.b1*m1_unbiased + (1-self.b1)*grad_unbiased
+        update = self.step_size * m1_unbiased / (np.sqrt(m2_unbiased) + EPS)
         self.step += 1
-        return update * self.step_size
+        return update
 
 
 class CaffeModel:
@@ -133,7 +139,8 @@ class CaffeModel:
         return layers, features, grams
 
     def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
-                 step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None):
+                 step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None,
+                 b1=0.9, b2=0.9):
         """Performs style transfer from style_image to content_image."""
         content_weight /= max(len(content_layers), 1)
         style_weight /= max(len(style_layers), 1)
@@ -144,7 +151,7 @@ class CaffeModel:
         # Initialize the model with a noise image
         w, h = content_image.size
         self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
-        optimizer = Optimizer((3, h, w), dtype=np.float32, step_size=step_size)
+        optimizer = Optimizer((3, h, w), dtype=np.float32, step_size=step_size, b1=b1, b2=b2)
 
         for step in range(1, iterations+1):
             # Prepare gradient buffers and run the model forward
@@ -304,7 +311,7 @@ def parse_args():
         help='the layers to use for content')
     parser.add_argument(
         '--style-layers', nargs='*', metavar='LAYER',
-        default=['pool1', 'pool2', 'pool3', 'pool4'],
+        default=['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1'],
         help='the layers to use for style')
     parser.add_argument(
         '--port', '-p', type=int, default=8000,
@@ -328,6 +335,12 @@ def parse_args():
     )
     parser.add_argument(
         '--gpu', type=int, default=0, help='gpu number to use (-1 for cpu)'
+    )
+    parser.add_argument(
+        '-b1', type=ffloat, default=0.9, help='beta_1 momentum parameter for optimizer'
+    )
+    parser.add_argument(
+        '-b2', type=ffloat, default=0.9, help='beta_2 momentum parameter for optimizer'
     )
     return parser.parse_args()
 
@@ -377,7 +390,7 @@ def main():
         output_image = model.transfer(
             args.iterations, content_image, style_image, args.content_layers, args.style_layers,
             step_size=args.step_size, content_weight=args.content_weight, tv_weight=args.tv_weight,
-            callback=server.progress)
+            callback=server.progress, b1=args.b1, b2=args.b2)
     except KeyboardInterrupt:
         output_image = model.get_image()
     print('Saving output as %s.' % args.output_image)
