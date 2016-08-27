@@ -45,14 +45,7 @@ class LayerIndexer:
         getattr(self.net.blobs[key], self.attr)[0] = value
 
 
-class AdamOptimizer:
-    """Implements the Adam gradient descent optimizer with Nesterov momentum.
-
-    References:
-        https://arxiv.org/abs/1412.6980 (Adam: A Method for Stochastic Optimization)
-        http://cs229.stanford.edu/proj2015/054_report.pdf (Incorporating Nesterov Momentum into
-            Adam)
-    """
+class Optimizer:
     def __init__(self, shape, dtype=np.float32, step_size=1, b1=0.9, b2=0.9):
         """Initializes the optimizer."""
         self.step_size = step_size
@@ -61,18 +54,17 @@ class AdamOptimizer:
         self.step = 1
         self.m1 = np.zeros(shape, dtype)
         self.m2 = np.zeros(shape, dtype)
+        self.u2 = np.ones(shape, dtype)
 
     def update(self, grad):
         """Returns a step's parameter update given its gradient."""
         self.m1 = self.b1*self.m1 + (1-self.b1)*grad
+        m1_est = self.b1*self.m1 + (1-self.b1)*grad
         self.m2 = self.b2*self.m2 + (1-self.b2)*grad**2
-        m1_unbiased = self.m1 / (1-self.b1**self.step)
-        m2_unbiased = self.m2 / (1-self.b2**self.step)
-        grad_unbiased = grad / (1-self.b1**self.step)
-        m1_unbiased = self.b1*m1_unbiased + (1-self.b1)*grad_unbiased
-        update = self.step_size * m1_unbiased / (np.sqrt(m2_unbiased) + EPS)
+        update = m1_est * np.sqrt(self.u2 + EPS) / np.sqrt(self.m2 + EPS)
+        self.u2 = self.b2*self.u2 + (1-self.b2)*update**2
         self.step += 1
-        return update
+        return update * self.step_size
 
 
 class CaffeModel:
@@ -143,7 +135,7 @@ class CaffeModel:
         # Initialize the model with a noise image
         w, h = content_image.size
         self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
-        optimizer = AdamOptimizer((3, h, w), dtype=np.float32, step_size=step_size)
+        optimizer = Optimizer((3, h, w), dtype=np.float32, step_size=step_size)
 
         for step in range(1, iterations+1):
             # Prepare gradient buffers and run the model forward
