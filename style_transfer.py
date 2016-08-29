@@ -68,7 +68,7 @@ class Optimizer:
         """Returns a step's parameter update given its gradient."""
         self.m1 = self.b1*self.m1 + (1-self.b1)*grad
         self.m2 = self.b2*self.m2 + (1-self.b2)*grad**2
-        m1_unbiased = self.m1 / (1-self.b1**self.step)
+        m1_unbiased = self.m1 / (1-self.b1**self.step+1)
         m2_unbiased = self.m2 / (1-self.b2**self.step)
         grad_unbiased = grad / (1-self.b1**self.step)
         m1_unbiased = self.b1*m1_unbiased + (1-self.b1)*grad_unbiased
