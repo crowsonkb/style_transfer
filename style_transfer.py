@@ -55,9 +55,10 @@ class Optimizer:
         http://cs229.stanford.edu/proj2015/054_report.pdf (Incorporating Nesterov Momentum into
             Adam)
     """
-    def __init__(self, shape, dtype=np.float32, step_size=1, b1=0.9, b2=0.9):
+    def __init__(self, shape, dtype=np.float32, step_size=1, max_step=0, b1=0.9, b2=0.9):
         """Initializes the optimizer."""
         self.step_size = step_size
+        self.max_step = max_step
         self.b1 = b1
         self.b2 = b2
         self.step = 1
@@ -66,13 +67,16 @@ class Optimizer:
 
     def update(self, grad):
         """Returns a step's parameter update given its gradient."""
+        ss = self.step_size
+        if self.max_step:
+            ss *= max(0, 1-(self.step / self.max_step))
         self.m1 = self.b1*self.m1 + (1-self.b1)*grad
         self.m2 = self.b2*self.m2 + (1-self.b2)*grad**2
         m1_unbiased = self.m1 / (1-self.b1**self.step+1)
         m2_unbiased = self.m2 / (1-self.b2**self.step)
         grad_unbiased = grad / (1-self.b1**self.step)
         m1_est = self.b1*m1_unbiased + (1-self.b1)*grad_unbiased
-        update = self.step_size * m1_est / (np.sqrt(m2_unbiased) + EPS)
+        update = ss * m1_est / (np.sqrt(m2_unbiased) + EPS)
         self.step += 1
         return update
 
@@ -151,7 +155,8 @@ class CaffeModel:
         # Initialize the model with a noise image
         w, h = content_image.size
         self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
-        optimizer = Optimizer((3, h, w), dtype=np.float32, step_size=step_size, b1=b1, b2=b2)
+        optimizer = Optimizer((3, h, w), np.float32,
+                              step_size=step_size, max_step=iterations+1, b1=b1, b2=b2)
 
         for step in range(1, iterations+1):
             # Prepare gradient buffers and run the model forward
@@ -295,7 +300,7 @@ def parse_args():
     parser.add_argument('style_image', help='the style image')
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
     parser.add_argument(
-        '--iterations', '-i', type=int, default=250, help='the number of iterations')
+        '--iterations', '-i', type=int, default=300, help='the number of iterations')
     parser.add_argument(
         '--step-size', '-st', type=ffloat, default=10, help='the step size (iteration strength)')
     parser.add_argument(
