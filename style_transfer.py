@@ -193,6 +193,13 @@ class CaffeModel:
             # Gradient descent update
             update = optimizer.update(grad)
             self.data['data'] -= update
+
+            # Apply constraints
+            mean = self.mean.squeeze()
+            self.data['data'][0] = np.clip(self.data['data'][0], -mean[0], 255-mean[0])
+            self.data['data'][1] = np.clip(self.data['data'][1], -mean[1], 255-mean[1])
+            self.data['data'][2] = np.clip(self.data['data'][2], -mean[2], 255-mean[2])
+
             if callback is not None:
                 callback(step=step, update_size=np.mean(np.abs(update)))
 
