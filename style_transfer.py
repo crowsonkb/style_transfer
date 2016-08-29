@@ -71,8 +71,8 @@ class Optimizer:
         m1_unbiased = self.m1 / (1-self.b1**self.step+1)
         m2_unbiased = self.m2 / (1-self.b2**self.step)
         grad_unbiased = grad / (1-self.b1**self.step)
-        m1_unbiased = self.b1*m1_unbiased + (1-self.b1)*grad_unbiased
-        update = self.step_size * m1_unbiased / (np.sqrt(m2_unbiased) + EPS)
+        m1_est = self.b1*m1_unbiased + (1-self.b1)*grad_unbiased
+        update = self.step_size * m1_est / (np.sqrt(m2_unbiased) + EPS)
         self.step += 1
         return update
 
