@@ -337,10 +337,10 @@ def parse_args():
         '--gpu', type=int, default=0, help='gpu number to use (-1 for cpu)'
     )
     parser.add_argument(
-        '-b1', type=ffloat, default=0.9, help='beta_1 momentum parameter for optimizer'
+        '-b1', type=ffloat, default=0.9, help='First moment momentum parameter for optimizer'
     )
     parser.add_argument(
-        '-b2', type=ffloat, default=0.9, help='beta_2 momentum parameter for optimizer'
+        '-b2', type=ffloat, default=0.9, help='Second moment momentum parameter for optimizer'
     )
     return parser.parse_args()
 
