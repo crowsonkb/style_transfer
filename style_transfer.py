@@ -49,12 +49,7 @@ class LayerIndexer:
 
 
 class Optimizer:
-    """Implements the Adam gradient descent optimizer with Nesterov momentum.
-    References:
-        https://arxiv.org/abs/1412.6980 (Adam: A Method for Stochastic Optimization)
-        http://cs229.stanford.edu/proj2015/054_report.pdf (Incorporating Nesterov Momentum into
-            Adam)
-    """
+    """Implements the RMSprop gradient descent optimizer with Nesterov momentum."""
     def __init__(self, shape, dtype=np.float32, step_size=1, max_step=0, b1=0.9, b2=0.9):
         """Initializes the optimizer."""
         self.step_size = step_size
@@ -70,13 +65,10 @@ class Optimizer:
         ss = self.step_size
         if self.max_step:
             ss *= max(0, 1-(self.step / self.max_step))
-        self.m1 = self.b1*self.m1 + (1-self.b1)*grad
+        self.m1 = self.b1*self.m1 + grad
         self.m2 = self.b2*self.m2 + (1-self.b2)*grad**2
-        m1_unbiased = self.m1 / (1-self.b1**self.step+1)
-        m2_unbiased = self.m2 / (1-self.b2**self.step)
-        grad_unbiased = grad / (1-self.b1**self.step)
-        m1_est = self.b1*m1_unbiased + (1-self.b1)*grad_unbiased
-        update = ss * m1_est / (np.sqrt(m2_unbiased) + EPS)
+        m1_est = self.b1*self.m1 + grad
+        update = ss * m1_est / (np.sqrt(self.m2) + EPS)
         self.step += 1
         return update
 
@@ -307,9 +299,9 @@ def parse_args():
     parser.add_argument('style_image', help='the style image')
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
     parser.add_argument(
-        '--iterations', '-i', type=int, default=300, help='the number of iterations')
+        '--iterations', '-i', type=int, default=150, help='the number of iterations')
     parser.add_argument(
-        '--step-size', '-st', type=ffloat, default=10, help='the step size (iteration strength)')
+        '--step-size', '-st', type=ffloat, default=2, help='the step size (iteration strength)')
     parser.add_argument(
         '--size', '-s', type=int, default=256, help='the maximum output size')
     parser.add_argument(
