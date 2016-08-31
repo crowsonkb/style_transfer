@@ -61,21 +61,27 @@ class Optimizer:
         self.m1 = np.zeros_like(params)
         self.m2 = np.zeros_like(params)
 
-    def update(self, grad):
-        """Returns a step's parameter update given its gradient."""
-        # Step size decay
-        ss = self.step_size
+    def get_ss(self):
+        """Get the current step size."""
         if self.max_step:
-            ss *= max(0, 1-(self.step / self.max_step))
+            return self.step_size * max(0, 1-(self.step / self.max_step))
+        return self.step_size
 
+    def update(self, grad, old_params):
+        """Returns a step's parameter update given its gradient and pre-Nesterov-step params."""
         self.m1 = self.b1*self.m1 + grad
         self.m2 = self.b2*self.m2 + (1-self.b2)*grad**2
-        m1_est = self.b1*self.m1 + grad
-        update = ss * m1_est / (np.sqrt(self.m2) + EPS)
+        update = self.get_ss() * self.m1 / (np.sqrt(self.m2) + EPS)
 
-        self.params -= update
+        self.params[:] = old_params - update
         self.step += 1
         return update
+
+    def apply_nesterov_step(self):
+        """Updates params with an estimate of the next update."""
+        old_params = self.params.copy()
+        self.params -= self.get_ss() * self.b1*self.m1 / (np.sqrt(self.b2*self.m2) + EPS)
+        return old_params
 
 
 class CaffeModel:
@@ -157,6 +163,7 @@ class CaffeModel:
 
         for step in range(1, iterations+1):
             # Prepare gradient buffers and run the model forward
+            old_params = optimizer.apply_nesterov_step()
             for layer in layers:
                 self.diff[layer] = 0
             self.net.forward(end=layers[0])
@@ -188,7 +195,7 @@ class CaffeModel:
             grad = normalize(self.diff['data']) + tv_weight*tv_grad
 
             # In-place gradient descent update
-            update_size = np.mean(np.abs(optimizer.update(grad)))
+            update_size = np.mean(np.abs(optimizer.update(grad, old_params)))
 
             # Apply constraints
             mean = self.mean.squeeze()
@@ -303,9 +310,9 @@ def parse_args():
     parser.add_argument('style_image', help='the style image')
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
     parser.add_argument(
-        '--iterations', '-i', type=int, default=150, help='the number of iterations')
+        '--iterations', '-i', type=int, default=200, help='the number of iterations')
     parser.add_argument(
-        '--step-size', '-st', type=ffloat, default=2, help='the step size (iteration strength)')
+        '--step-size', '-st', type=ffloat, default=1, help='the step size (iteration strength)')
     parser.add_argument(
         '--size', '-s', type=int, default=256, help='the maximum output size')
     parser.add_argument(
