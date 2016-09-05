@@ -140,11 +140,12 @@ class CaffeModel:
             self.features[layer] = self.data[layer].copy()
 
         # Prepare Gram matrices from style image
-        self.grams = {}
-        self.set_image(style_image)
-        self.net.forward(end=layers[0])
-        for layer in style_layers:
-            self.grams[layer] = gram_matrix(self.data[layer])
+        if self.grams is None:
+            self.grams = {}
+            self.set_image(style_image)
+            self.net.forward(end=layers[0])
+            for layer in style_layers:
+                self.grams[layer] = gram_matrix(self.data[layer])
 
         return layers
 
@@ -229,10 +230,10 @@ class CaffeModel:
         output_image = None
         for size in sizes:
             content_scaled = resize_to_fit(content_image, size)
-            style_scaled = resize_to_fit(style_image, size)
+            # style_scaled = resize_to_fit(style_image, size)
             if output_image is not None:
                 output_image = output_image.resize(content_scaled.size, Image.BICUBIC)
-            output_image = self.transfer(iterations, content_scaled, style_scaled,
+            output_image = self.transfer(iterations, content_scaled, style_image,
                                          initial_image=output_image, *args, **kwargs)
         return output_image
 
