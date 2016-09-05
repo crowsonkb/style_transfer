@@ -150,7 +150,7 @@ class CaffeModel:
 
     def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
                  step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None,
-                 b1=0.9, b2=0.9, initial_image=None):
+                 initial_image=None):
         """Performs style transfer from style_image to content_image."""
         content_weight /= max(len(content_layers), 1)
         style_weight /= max(len(style_layers), 1)
@@ -166,7 +166,7 @@ class CaffeModel:
             self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
 
         optimizer = Optimizer(self.data['data'],
-                              step_size=step_size, max_step=iterations+1, b1=b1, b2=b2)
+                              step_size=step_size, max_step=iterations+1)
         log = open('log.csv', 'w')
         print('tv loss', file=log, flush=True)
 
