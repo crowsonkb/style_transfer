@@ -171,11 +171,6 @@ class CaffeModel:
         print('tv loss', file=log, flush=True)
 
         for step in range(1, iterations+1):
-            tv_h = convolve1d(self.data['data'], [-1, 1], axis=1)
-            tv_v = convolve1d(self.data['data'], [-1, 1], axis=2)
-            tv_loss = np.sum((tv_h**2 + tv_v**2))/2
-            print(tv_loss/self.data['data'].size, file=log, flush=True)
-
             # Prepare gradient buffers and run the model forward
             old_params = optimizer.apply_nesterov_step()
             for layer in layers:
@@ -217,10 +212,16 @@ class CaffeModel:
             self.data['data'][1] = np.clip(self.data['data'][1], -mean[1], 255-mean[1])
             self.data['data'][2] = np.clip(self.data['data'][2], -mean[2], 255-mean[2])
 
+            # Compute tv loss statistic
+            tv_h = convolve1d(self.data['data'], [-1, 1], axis=1)
+            tv_v = convolve1d(self.data['data'], [-1, 1], axis=2)
+            tv_loss = 0.5 * np.sum((tv_h**2 + tv_v**2)) / self.data['data'].size
+            print(tv_loss, file=log, flush=True)
+
             self.current_output = self.get_image()
 
             if callback is not None:
-                callback(step=step, update_size=update_size)
+                callback(step=step, update_size=update_size, loss=tv_loss)
 
         return self.get_image()
 
@@ -241,18 +242,20 @@ class Progress:
     prev_t = None
     t = 0
     step = 0
+    update_size = np.nan
+    loss = np.nan
 
     def __init__(self, model, url=None, steps=-1, save_every=0):
         self.model = model
         self.url = url
         self.steps = steps
         self.save_every = save_every
-        self.update_size = np.nan
 
-    def __call__(self, step=-1, update_size=np.nan):
+    def __call__(self, step=-1, update_size=np.nan, loss=np.nan):
         this_t = time.perf_counter()
         self.step += 1
         self.update_size = update_size
+        self.loss = loss
         if self.save_every and self.step % self.save_every == 0:
             self.model.get_image().save('out_%04d.png' % self.step)
         if self.step == 1:
@@ -260,7 +263,8 @@ class Progress:
                 webbrowser.open(self.url)
         else:
             self.t = this_t - self.prev_t
-        print('Step %d, time: %.2f s, mean update: %.2f' % (step, self.t, update_size), flush=True)
+        print('Step %d, time: %.2f s, mean update: %.2f, mean tv loss: %.1f' % \
+              (step, self.t, update_size, loss), flush=True)
         self.prev_t = this_t
 
 
@@ -282,7 +286,8 @@ class ProgressHandler(BaseHTTPRequestHandler):
     #out {image-rendering: -webkit-optimize-contrast;}</style>
     <h1>Style transfer</h1>
     <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
-    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, mean update: %(update_size).2f
+    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, mean update: %(update_size).2f,
+    mean tv loss: %(loss).1f
     """
 
     def do_GET(self):
@@ -296,6 +301,7 @@ class ProgressHandler(BaseHTTPRequestHandler):
                 'steps': self.server.progress.steps,
                 't': self.server.progress.t,
                 'update_size': self.server.progress.update_size,
+                'loss': self.server.progress.loss,
                 'w': self.server.model.data['data'].shape[2],
                 'h': self.server.model.data['data'].shape[1],
             }).encode())
