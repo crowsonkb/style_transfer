@@ -17,7 +17,7 @@ import webbrowser
 
 import numpy as np
 from PIL import Image
-from scipy.ndimage import convolve
+from scipy.ndimage import convolve, convolve1d
 
 # Machine epsilon for float32
 EPS = np.finfo(np.float32).eps
@@ -67,14 +67,21 @@ class Optimizer:
             return self.step_size * max(0, 1-(self.step / self.max_step))
         return self.step_size
 
-    def update(self, grad):
+    def update(self, grad, old_params):
         """Returns a step's parameter update given its gradient and pre-Nesterov-step params."""
-        self.m1 = self.b1*self.m1 + (1-self.b1)*grad
+        self.m1 = self.b1*self.m1 + grad
         self.m2 = self.b2*self.m2 + (1-self.b2)*grad**2
-        params = self.params - self.get_ss() * self.m1 / (np.sqrt(self.m2) + EPS)
-        self.params[:] = self.b2*self.params + (1-self.b2)*params
+        update = self.get_ss() * self.m1 / (np.sqrt(self.m2) + EPS)
+
+        self.params[:] = old_params - update
         self.step += 1
         return 0
+
+    def apply_nesterov_step(self):
+        """Updates params with an estimate of the next update."""
+        old_params = self.params.copy()
+        self.params -= self.get_ss() * self.b1*self.m1 / (np.sqrt(self.b2*self.m2) + EPS)
+        return old_params
 
 
 class CaffeModel:
@@ -153,9 +160,17 @@ class CaffeModel:
         self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
         optimizer = Optimizer(self.data['data'],
                               step_size=step_size, max_step=iterations+1, b1=b1, b2=b2)
+        log = open('log.csv', 'w')
+        print('tv loss', file=log, flush=True)
 
         for step in range(1, iterations+1):
+            tv_h = convolve1d(self.data['data'], [-1, 1], axis=1)
+            tv_v = convolve1d(self.data['data'], [-1, 1], axis=2)
+            tv_loss = np.sum((tv_h**2 + tv_v**2))/2
+            print(tv_loss/self.data['data'].size, file=log, flush=True)
+
             # Prepare gradient buffers and run the model forward
+            old_params = optimizer.apply_nesterov_step()
             for layer in layers:
                 self.diff[layer] = 0
             self.net.forward(end=layers[0])
@@ -187,7 +202,7 @@ class CaffeModel:
             grad = normalize(self.diff['data']) + tv_weight*tv_grad
 
             # In-place gradient descent update
-            update_size = np.mean(np.abs(optimizer.update(grad)))
+            update_size = np.mean(np.abs(optimizer.update(grad, old_params)))
 
             # Apply constraints
             mean = self.mean.squeeze()
@@ -304,7 +319,7 @@ def parse_args():
     parser.add_argument(
         '--iterations', '-i', type=int, default=200, help='the number of iterations')
     parser.add_argument(
-        '--step-size', '-st', type=ffloat, default=200, help='the step size (iteration strength)')
+        '--step-size', '-st', type=ffloat, default=1, help='the step size (iteration strength)')
     parser.add_argument(
         '--size', '-s', type=int, default=256, help='the maximum output size')
     parser.add_argument(
