@@ -75,7 +75,7 @@ class Optimizer:
 
         self.params[:] = old_params - update
         self.step += 1
-        return 0
+        return update
 
     def apply_nesterov_step(self):
         """Updates params with an estimate of the next update."""
