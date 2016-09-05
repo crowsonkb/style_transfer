@@ -17,7 +17,7 @@ import webbrowser
 
 import numpy as np
 from PIL import Image
-from scipy.ndimage import convolve
+from scipy.ndimage import convolve, convolve1d
 
 # Machine epsilon for float32
 EPS = np.finfo(np.float32).eps
@@ -160,8 +160,15 @@ class CaffeModel:
         self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
         optimizer = Optimizer(self.data['data'],
                               step_size=step_size, max_step=iterations+1, b1=b1, b2=b2)
+        log = open('log.csv', 'w')
+        print('tv loss', file=log, flush=True)
 
         for step in range(1, iterations+1):
+            tv_h = convolve1d(self.data['data'], [-1, 1], axis=1)
+            tv_v = convolve1d(self.data['data'], [-1, 1], axis=2)
+            tv_loss = np.sum((tv_h**2 + tv_v**2))/2
+            print(tv_loss/self.data['data'].size, file=log, flush=True)
+
             # Prepare gradient buffers and run the model forward
             old_params = optimizer.apply_nesterov_step()
             for layer in layers:
