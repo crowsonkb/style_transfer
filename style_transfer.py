@@ -94,6 +94,9 @@ class CaffeModel:
         self.net = caffe.Net(deploy, 1, weights=weights)
         self.data = LayerIndexer(self.net, 'data')
         self.diff = LayerIndexer(self.net, 'diff')
+        self.features = None
+        self.grams = None
+        self.current_output = None
 
     def get_image(self):
         """Gets the current model input as a PIL image."""
@@ -130,34 +133,38 @@ class CaffeModel:
                 layers.append(layer)
 
         # Prepare feature maps from content image
-        features = {}
+        self.features = {}
         self.set_image(content_image)
         self.net.forward(end=layers[0])
         for layer in content_layers:
-            features[layer] = self.data[layer].copy()
+            self.features[layer] = self.data[layer].copy()
 
         # Prepare Gram matrices from style image
-        grams = {}
+        self.grams = {}
         self.set_image(style_image)
         self.net.forward(end=layers[0])
         for layer in style_layers:
-            grams[layer] = gram_matrix(self.data[layer])
+            self.grams[layer] = gram_matrix(self.data[layer])
 
-        return layers, features, grams
+        return layers
 
     def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
                  step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None,
-                 b1=0.9, b2=0.9):
+                 b1=0.9, b2=0.9, initial_image=None):
         """Performs style transfer from style_image to content_image."""
         content_weight /= max(len(content_layers), 1)
         style_weight /= max(len(style_layers), 1)
 
-        layers, features, grams = self.preprocess_images(
-            content_image, style_image, content_layers, style_layers)
+        layers = self.preprocess_images(content_image, style_image, content_layers, style_layers)
 
         # Initialize the model with a noise image
         w, h = content_image.size
-        self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
+        if initial_image is not None:
+            assert initial_image.size == (w, h), 'Initial image size must match content image'
+            self.set_image(initial_image)
+        else:
+            self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
+
         optimizer = Optimizer(self.data['data'],
                               step_size=step_size, max_step=iterations+1, b1=b1, b2=b2)
         log = open('log.csv', 'w')
@@ -178,13 +185,13 @@ class CaffeModel:
             for i, layer in enumerate(layers):
                 # Compute the content and style gradients
                 if layer in content_layers:
-                    c_grad = self.data[layer] - features[layer]
+                    c_grad = self.data[layer] - self.features[layer]
                     self.diff[layer] += normalize(c_grad)*content_weight
                 if layer in style_layers:
                     current_gram = gram_matrix(self.data[layer])
                     n, mh, mw = self.data[layer].shape
                     feat = self.data[layer].reshape((n, mh * mw))
-                    s_grad = (current_gram - grams[layer]).T @ feat
+                    s_grad = (current_gram - self.grams[layer]).T @ feat
                     s_grad = s_grad.reshape((n, mh, mw))
                     self.diff[layer] += normalize(s_grad)*style_weight
 
@@ -210,17 +217,30 @@ class CaffeModel:
             self.data['data'][1] = np.clip(self.data['data'][1], -mean[1], 255-mean[1])
             self.data['data'][2] = np.clip(self.data['data'][2], -mean[2], 255-mean[2])
 
+            self.current_output = self.get_image()
+
             if callback is not None:
                 callback(step=step, update_size=update_size)
 
         return self.get_image()
 
+    def transfer_multiscale(self, sizes, iterations, content_image, style_image, *args, **kwargs):
+        output_image = None
+        for size in sizes:
+            content_scaled = resize_to_fit(content_image, size)
+            style_scaled = resize_to_fit(style_image, size)
+            if output_image is not None:
+                output_image = output_image.resize(content_scaled.size, Image.BICUBIC)
+            output_image = self.transfer(iterations, content_scaled, style_scaled,
+                                         initial_image=output_image, *args, **kwargs)
+        return output_image
+
 
 class Progress:
     """A helper class for keeping track of progress."""
     prev_t = None
-    t = np.nan
-    step = None
+    t = 0
+    step = 0
 
     def __init__(self, model, url=None, steps=-1, save_every=0):
         self.model = model
@@ -231,11 +251,11 @@ class Progress:
 
     def __call__(self, step=-1, update_size=np.nan):
         this_t = time.perf_counter()
-        self.step = step
+        self.step += 1
         self.update_size = update_size
         if self.save_every and self.step % self.save_every == 0:
             self.model.get_image().save('out_%04d.png' % self.step)
-        if step == 1:
+        if self.step == 1:
             if self.url:
                 webbrowser.open(self.url)
         else:
@@ -284,7 +304,7 @@ class ProgressHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'image/png')
             self.end_headers()
             buf = io.BytesIO()
-            self.server.model.get_image().save(buf, format='png')
+            self.server.model.current_output.save(buf, format='png')
             self.wfile.write(buf.getvalue())
         else:
             self.send_error(404)
@@ -321,7 +341,7 @@ def parse_args():
     parser.add_argument(
         '--step-size', '-st', type=ffloat, default=1, help='the step size (iteration strength)')
     parser.add_argument(
-        '--size', '-s', type=int, default=256, help='the maximum output size')
+        '--size', '-s', nargs='+', type=int, default=256, help='the output size(s)')
     parser.add_argument(
         '--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor')
     parser.add_argument(
@@ -358,14 +378,6 @@ def parse_args():
     parser.add_argument(
         '--gpu', type=int, default=0, help='gpu number to use (-1 for cpu)'
     )
-    parser.add_argument(
-        '-b1', metavar='N', type=ffloat, default=0.9,
-        help='first moment momentum parameter for optimizer (0<=N<1)'
-    )
-    parser.add_argument(
-        '-b2', metavar='N', type=ffloat, default=0.9,
-        help='second moment momentum parameter for optimizer (0<=N<1)'
-    )
     return parser.parse_args()
 
 
@@ -389,11 +401,10 @@ def main():
             print('    %s, size=%s' % (layer, model.data[layer].shape))
         sys.exit(0)
 
+    sizes = sorted(args.size)
     content_image = Image.open(args.content_image).convert('RGB')
     style_image = Image.open(args.style_image).convert('RGB')
-    content_image = resize_to_fit(content_image, args.size)
-    style_image = resize_to_fit(style_image, args.size*args.style_scale)
-    print('Resized content image to %dx%d' % content_image.size)
+    style_image = resize_to_fit(style_image, sizes[-1]*args.style_scale)
     print('Resized style image to %dx%d' % style_image.size)
 
     server_address = ('', args.port)
@@ -404,17 +415,17 @@ def main():
     if not args.no_browser:
         progress_args['url'] = url
     server.progress = Progress(
-        model, steps=args.iterations, save_every=args.save_every, **progress_args)
+        model, steps=args.iterations*len(sizes), save_every=args.save_every, **progress_args)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print('\nWatch the progress at: %s\n' % url)
 
     caffe.set_random_seed(0)
     np.random.seed(0)
     try:
-        output_image = model.transfer(
-            args.iterations, content_image, style_image, args.content_layers, args.style_layers,
-            step_size=args.step_size, content_weight=args.content_weight, tv_weight=args.tv_weight,
-            callback=server.progress, b1=args.b1, b2=args.b2)
+        output_image = model.transfer_multiscale(
+            sizes, args.iterations, content_image, style_image, args.content_layers,
+            args.style_layers, step_size=args.step_size, content_weight=args.content_weight,
+            tv_weight=args.tv_weight, callback=server.progress)
     except KeyboardInterrupt:
         output_image = model.get_image()
     print('Saving output as %s.' % args.output_image)
