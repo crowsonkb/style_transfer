@@ -2,7 +2,7 @@
 
 """Neural style transfer using Caffe. Implements http://arxiv.org/abs/1508.06576."""
 
-# pylint: disable=invalid-name, too-many-arguments, too-many-locals
+# pylint: disable=invalid-name, too-many-arguments, too-many-instance-attributes, too-many-locals
 
 import argparse
 from fractions import Fraction
@@ -217,7 +217,7 @@ class CaffeModel:
             self.data['data'][0] = np.clip(self.data['data'][0], -mean[0], 255-mean[0])
             self.data['data'][1] = np.clip(self.data['data'][1], -mean[1], 255-mean[1])
             self.data['data'][2] = np.clip(self.data['data'][2], -mean[2], 255-mean[2])
-            # print('mean params=%g' % np.mean(self.data['data']))
+            print('mean params=%g' % np.mean(self.data['data']))
 
             # Compute tv loss statistic
             tv_h = convolve1d(self.data['data'], [-1, 1], axis=1)
@@ -234,6 +234,7 @@ class CaffeModel:
         return self.get_image()
 
     def transfer_multiscale(self, sizes, iterations, content_image, style_image, *args, **kwargs):
+        """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
         for size in sizes:
             content_scaled = resize_to_fit(content_image, size)
