@@ -356,7 +356,7 @@ def parse_args():
     parser.add_argument(
         '--step-size', '-st', type=ffloat, default=2, help='the step size (iteration strength)')
     parser.add_argument(
-        '--size', '-s', nargs='+', type=int, default=256, help='the output size(s)')
+        '--size', '-s', nargs='+', type=int, default=[256], help='the output size(s)')
     parser.add_argument(
         '--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor')
     parser.add_argument(
