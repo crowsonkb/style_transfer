@@ -16,7 +16,7 @@ import time
 import webbrowser
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 from scipy.ndimage import convolve, convolve1d
 
 # Machine epsilon for float32
@@ -217,7 +217,7 @@ class CaffeModel:
             self.data['data'][0] = np.clip(self.data['data'][0], -mean[0], 255-mean[0])
             self.data['data'][1] = np.clip(self.data['data'][1], -mean[1], 255-mean[1])
             self.data['data'][2] = np.clip(self.data['data'][2], -mean[2], 255-mean[2])
-            print('mean params=%g' % np.mean(self.data['data']))
+            # print('mean params=%g' % np.mean(self.data['data']))
 
             # Compute tv loss statistic
             tv_h = convolve1d(self.data['data'], [-1, 1], axis=1)
