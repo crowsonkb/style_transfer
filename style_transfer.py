@@ -64,7 +64,9 @@ class Optimizer:
     def get_ss(self):
         """Get the current step size."""
         if self.max_step:
-            return self.step_size * max(0, 1-(self.step / self.max_step))
+            # gamma = decay_by**(1/every)
+            gamma = 0.05**(1/self.max_step)
+            return self.step_size * gamma**self.step
         return self.step_size
 
     def update(self, grad, old_params):
@@ -215,6 +217,7 @@ class CaffeModel:
             self.data['data'][0] = np.clip(self.data['data'][0], -mean[0], 255-mean[0])
             self.data['data'][1] = np.clip(self.data['data'][1], -mean[1], 255-mean[1])
             self.data['data'][2] = np.clip(self.data['data'][2], -mean[2], 255-mean[2])
+            # print('mean params=%g' % np.mean(self.data['data']))
 
             # Compute tv loss statistic
             tv_h = convolve1d(self.data['data'], [-1, 1], axis=1)
@@ -350,7 +353,7 @@ def parse_args():
     parser.add_argument(
         '--iterations', '-i', type=int, default=200, help='the number of iterations')
     parser.add_argument(
-        '--step-size', '-st', type=ffloat, default=1, help='the step size (iteration strength)')
+        '--step-size', '-st', type=ffloat, default=2, help='the step size (iteration strength)')
     parser.add_argument(
         '--size', '-s', nargs='+', type=int, default=256, help='the output size(s)')
     parser.add_argument(
