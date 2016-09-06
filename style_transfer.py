@@ -174,8 +174,11 @@ class CaffeModel:
         for i, layer in enumerate(layers):
             # Compute the content and style gradients
             if layer in content_layers:
-                # FIXME: adapt to different content layer sizes
-                start = start // 8
+                assert layer.startswith('conv') or layer.startswith('pool')
+                level = int(layer[4])-1
+                if layer.startswith('pool'):
+                    level += 1
+                start = start // 2**level
                 end = start + np.array(self.data[layer].shape[-2:])
                 feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
                 c_grad = self.data[layer] - feat
