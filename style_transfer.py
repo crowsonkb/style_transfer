@@ -104,10 +104,11 @@ class CaffeModel:
         self.features = None
         self.grams = None
         self.current_output = None
+        self.img = None
 
     def get_image(self):
         """Gets the current model input as a PIL image."""
-        arr = self.data['data'] + self.mean
+        arr = self.img + self.mean
         if self.bgr:
             arr = arr[::-1]
         arr = arr.transpose((1, 2, 0))
@@ -118,8 +119,7 @@ class CaffeModel:
         arr = np.float32(img).transpose((2, 0, 1))
         if self.bgr:
             arr = arr[::-1]
-        self.net.blobs['data'].reshape(1, 3, *arr.shape[-2:])
-        self.data['data'] = arr - self.mean
+        self.img = arr - self.mean
 
     def layers(self):
         """Returns the layer names of the network."""
@@ -142,6 +142,8 @@ class CaffeModel:
         # Prepare feature maps from content image
         self.features = {}
         self.set_image(content_image)
+        self.net.blobs['data'].reshape(1, 3, *self.img.shape[-2:])
+        self.data['data'] = self.img
         self.net.forward(end=layers[0])
         for layer in content_layers:
             self.features[layer] = self.data[layer].copy()
@@ -150,13 +152,19 @@ class CaffeModel:
         if self.grams is None:
             self.grams = {}
             self.set_image(style_image)
+            self.net.blobs['data'].reshape(1, 3, *self.img.shape[-2:])
+            self.data['data'] = self.img
             self.net.forward(end=layers[0])
             for layer in style_layers:
                 self.grams[layer] = gram_matrix(self.data[layer])
 
         return layers
 
-    def eval_sc_grad(self, layers, content_layers, style_layers, content_weight, style_weight):
+    def eval_sc_grad_tile(self, img, layers, content_layers, style_layers,
+                          content_weight, style_weight):
+        self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
+        self.data['data'] = img
+
         # Prepare gradient buffers and run the model forward
         for layer in layers:
             self.diff[layer] = 0
@@ -186,8 +194,11 @@ class CaffeModel:
 
         return self.diff['data']
 
+    def eval_sc_grad(self, img, *args):
+        return self.eval_sc_grad_tile(img, *args)
+
     def roll(self, xy):
-        """Roll image and feature maps. VGG16/19 only."""
+        """Roll image and feature maps. VGG only."""
         for layer, feat in self.features.items():
             assert layer.startswith('conv') or layer.startswith('pool')
             level = int(layer[4])
@@ -197,7 +208,7 @@ class CaffeModel:
             x, y = xy * 2**(4-level)
             self.features[layer] = np.roll(np.roll(feat, x, 2), y, 1)
         x, y = xy * 8
-        self.data['data'] = np.roll(np.roll(self.data['data'], x, 2), y, 1)
+        self.img[:] = np.roll(np.roll(self.img, x, 2), y, 1)
 
     def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
                  step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None,
@@ -216,8 +227,7 @@ class CaffeModel:
         else:
             self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
 
-        optimizer = Optimizer(self.data['data'],
-                              step_size=step_size, max_step=iterations+1)
+        optimizer = Optimizer(self.img, step_size=step_size, max_step=iterations+1)
         log = open('log.csv', 'w')
         print('tv loss', file=log, flush=True)
 
@@ -227,19 +237,19 @@ class CaffeModel:
             optimizer.roll(xy*8)
 
             old_params = optimizer.apply_nesterov_step()
-            grad = self.eval_sc_grad(layers, content_layers, style_layers,
+            grad = self.eval_sc_grad(self.img, layers, content_layers, style_layers,
                                      content_weight, style_weight)
 
             # Compute total variation gradient
             tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
-            tv_grad = convolve(self.data['data'], tv_kernel, mode='wrap')/255
+            tv_grad = convolve(self.img, tv_kernel, mode='wrap')/255
             tv_grad[:, 0:1, :] *= 5
             tv_grad[:, -2:-1, :] *= 5
             tv_grad[:, :, 0:1] *= 5
             tv_grad[:, :, -2:-1] *= 5
 
             # Compute a weighted sum of normalized gradients
-            grad = normalize(self.diff['data']) + tv_weight*tv_grad
+            grad = normalize(grad) + tv_weight*tv_grad
 
             # In-place gradient descent update
             update_size = np.mean(np.abs(optimizer.update(grad, old_params)))
@@ -248,20 +258,19 @@ class CaffeModel:
 
             # Apply constraints
             mean = self.mean.squeeze()
-            self.data['data'][0] = np.clip(self.data['data'][0], -mean[0], 255-mean[0])
-            self.data['data'][1] = np.clip(self.data['data'][1], -mean[1], 255-mean[1])
-            self.data['data'][2] = np.clip(self.data['data'][2], -mean[2], 255-mean[2])
-            # print('mean params=%g' % np.mean(self.data['data']))
+            self.img[0] = np.clip(self.img[0], -mean[0], 255-mean[0])
+            self.img[1] = np.clip(self.img[1], -mean[1], 255-mean[1])
+            self.img[2] = np.clip(self.img[2], -mean[2], 255-mean[2])
+            # print('mean params=%g' % np.mean(self.img))
 
             # Compute tv loss statistic
-            tv_h = convolve1d(self.data['data'], [-1, 1], axis=1)
-            tv_v = convolve1d(self.data['data'], [-1, 1], axis=2)
-            tv_loss = 0.5 * np.sum((tv_h**2 + tv_v**2)) / self.data['data'].size
+            tv_h = convolve1d(self.img, [-1, 1], axis=1)
+            tv_v = convolve1d(self.img, [-1, 1], axis=2)
+            tv_loss = 0.5 * np.sum((tv_h**2 + tv_v**2)) / self.img.size
             print(tv_loss, file=log, flush=True)
 
             self.current_output = self.get_image()
 
-            # print(content_loss/self.data['data'].size, style_loss/self.data['data'].size)
             if callback is not None:
                 callback(step=step, update_size=update_size, loss=tv_loss)
 
@@ -306,7 +315,7 @@ class Progress:
                 webbrowser.open(self.url)
         else:
             self.t = this_t - self.prev_t
-        print('Step %d, time: %.2f s, mean update: %.2f, mean tv loss: %.1f' % \
+        print('Step %d, time: %.2f s, mean update: %.2f, mean tv loss: %.1f' %
               (step, self.t, update_size, loss), flush=True)
         self.prev_t = this_t
 
