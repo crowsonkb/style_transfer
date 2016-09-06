@@ -190,10 +190,10 @@ class CaffeModel:
         """Roll image and feature maps. VGG16/19 only."""
         for layer, feat in self.features.items():
             assert layer.startswith('conv') or layer.startswith('pool')
-            assert layer != 'pool5', 'Don\'t use this layer with jitter, please.'
             level = int(layer[4])
             if layer.startswith('pool'):
                 level += 1
+            assert level <= 4
             x, y = xy * 2**(4-level)
             self.features[layer] = np.roll(np.roll(feat, x, 2), y, 1)
         x, y = xy * 8
