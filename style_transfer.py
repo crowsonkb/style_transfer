@@ -177,12 +177,14 @@ class CaffeModel:
             for layer in layers:
                 self.diff[layer] = 0
             self.net.forward(end=layers[0])
+            # content_loss, style_loss = 0, 0
 
             for i, layer in enumerate(layers):
                 # Compute the content and style gradients
                 if layer in content_layers:
                     c_grad = self.data[layer] - self.features[layer]
                     self.diff[layer] += normalize(c_grad)*content_weight
+                    # content_loss += 0.5 * np.sum((self.data[layer] - self.features[layer])**2)
                 if layer in style_layers:
                     current_gram = gram_matrix(self.data[layer])
                     n, mh, mw = self.data[layer].shape
@@ -190,6 +192,7 @@ class CaffeModel:
                     s_grad = (current_gram - self.grams[layer]).T @ feat
                     s_grad = s_grad.reshape((n, mh, mw))
                     self.diff[layer] += normalize(s_grad)*style_weight
+                    # style_loss += 0.5 * np.sum((current_gram - self.grams[layer])**2)
 
                 # Run the model backward
                 if i+1 == len(layers):
@@ -221,6 +224,7 @@ class CaffeModel:
 
             self.current_output = self.get_image()
 
+            # print(content_loss/self.data['data'].size, style_loss/self.data['data'].size)
             if callback is not None:
                 callback(step=step, update_size=update_size, loss=tv_loss)
 
