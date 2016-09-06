@@ -16,7 +16,7 @@ import time
 import webbrowser
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image
 from scipy.ndimage import convolve, convolve1d
 
 # Machine epsilon for float32
@@ -58,8 +58,8 @@ class Optimizer:
         self.b1 = b1
         self.b2 = b2
         self.step = 1
-        self.m1 = 0
-        self.m2 = 0
+        self.m1 = np.zeros_like(params)
+        self.m2 = np.zeros_like(params)
 
     def get_ss(self):
         """Get the current step size."""
@@ -71,8 +71,8 @@ class Optimizer:
 
     def update(self, grad, old_params):
         """Returns a step's parameter update given its gradient and pre-Nesterov-step params."""
-        self.m1 = self.b1*self.m1 + grad
-        self.m2 = self.b2*self.m2 + (1-self.b2)*grad**2
+        self.m1[:] = self.b1*self.m1 + grad
+        self.m2[:] = self.b2*self.m2 + (1-self.b2)*grad**2
         update = self.get_ss() * self.m1 / (np.sqrt(self.m2) + EPS)
 
         self.params[:] = old_params - update
@@ -84,6 +84,11 @@ class Optimizer:
         old_params = self.params.copy()
         self.params -= self.get_ss() * self.b1*self.m1 / (np.sqrt(self.b2*self.m2) + EPS)
         return old_params
+
+    def roll(self, xy):
+        x, y = xy
+        self.m1[:] = np.roll(np.roll(self.m1, x, 2), y, 1)
+        self.m2[:] = np.roll(np.roll(self.m2, x, 2), y, 1)
 
 
 class CaffeModel:
@@ -151,6 +156,49 @@ class CaffeModel:
 
         return layers
 
+    def eval_sc_grad(self, layers, content_layers, style_layers, content_weight, style_weight):
+        # Prepare gradient buffers and run the model forward
+        for layer in layers:
+            self.diff[layer] = 0
+        self.net.forward(end=layers[0])
+        # content_loss, style_loss = 0, 0
+
+        for i, layer in enumerate(layers):
+            # Compute the content and style gradients
+            if layer in content_layers:
+                c_grad = self.data[layer] - self.features[layer]
+                self.diff[layer] += normalize(c_grad)*content_weight
+                # content_loss += 0.5 * np.sum((self.data[layer] - self.features[layer])**2)
+            if layer in style_layers:
+                current_gram = gram_matrix(self.data[layer])
+                n, mh, mw = self.data[layer].shape
+                feat = self.data[layer].reshape((n, mh * mw))
+                s_grad = (current_gram - self.grams[layer]).T @ feat
+                s_grad = s_grad.reshape((n, mh, mw))
+                self.diff[layer] += normalize(s_grad)*style_weight
+                # style_loss += 0.5 * np.sum((current_gram - self.grams[layer])**2)
+
+            # Run the model backward
+            if i+1 == len(layers):
+                self.net.backward(start=layer)
+            else:
+                self.net.backward(start=layer, end=layers[i+1])
+
+        return self.diff['data']
+
+    def roll(self, xy):
+        """Roll image and feature maps. VGG16/19 only."""
+        for layer, feat in self.features.items():
+            assert layer.startswith('conv') or layer.startswith('pool')
+            assert layer != 'pool5', 'Don\'t use this layer with jitter, please.'
+            level = int(layer[4])
+            if layer.startswith('pool'):
+                level += 1
+            x, y = xy * 2**(4-level)
+            self.features[layer] = np.roll(np.roll(feat, x, 2), y, 1)
+        x, y = xy * 8
+        self.data['data'] = np.roll(np.roll(self.data['data'], x, 2), y, 1)
+
     def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
                  step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None,
                  initial_image=None):
@@ -174,43 +222,29 @@ class CaffeModel:
         print('tv loss', file=log, flush=True)
 
         for step in range(1, iterations+1):
-            # Prepare gradient buffers and run the model forward
+            xy = np.int32(np.random.uniform(0, 16, size=2))-8
+            self.roll(xy)
+            optimizer.roll(xy*8)
+
             old_params = optimizer.apply_nesterov_step()
-            for layer in layers:
-                self.diff[layer] = 0
-            self.net.forward(end=layers[0])
-            # content_loss, style_loss = 0, 0
-
-            for i, layer in enumerate(layers):
-                # Compute the content and style gradients
-                if layer in content_layers:
-                    c_grad = self.data[layer] - self.features[layer]
-                    self.diff[layer] += normalize(c_grad)*content_weight
-                    # content_loss += 0.5 * np.sum((self.data[layer] - self.features[layer])**2)
-                if layer in style_layers:
-                    current_gram = gram_matrix(self.data[layer])
-                    n, mh, mw = self.data[layer].shape
-                    feat = self.data[layer].reshape((n, mh * mw))
-                    s_grad = (current_gram - self.grams[layer]).T @ feat
-                    s_grad = s_grad.reshape((n, mh, mw))
-                    self.diff[layer] += normalize(s_grad)*style_weight
-                    # style_loss += 0.5 * np.sum((current_gram - self.grams[layer])**2)
-
-                # Run the model backward
-                if i+1 == len(layers):
-                    self.net.backward(start=layer)
-                else:
-                    self.net.backward(start=layer, end=layers[i+1])
+            grad = self.eval_sc_grad(layers, content_layers, style_layers,
+                                     content_weight, style_weight)
 
             # Compute total variation gradient
             tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
-            tv_grad = convolve(self.data['data'], tv_kernel, mode='nearest')/255
+            tv_grad = convolve(self.data['data'], tv_kernel, mode='wrap')/255
+            tv_grad[:, 0:1, :] *= 5
+            tv_grad[:, -2:-1, :] *= 5
+            tv_grad[:, :, 0:1] *= 5
+            tv_grad[:, :, -2:-1] *= 5
 
             # Compute a weighted sum of normalized gradients
             grad = normalize(self.diff['data']) + tv_weight*tv_grad
 
             # In-place gradient descent update
             update_size = np.mean(np.abs(optimizer.update(grad, old_params)))
+            self.roll(-xy)
+            optimizer.roll(-xy*8)
 
             # Apply constraints
             mean = self.mean.squeeze()
