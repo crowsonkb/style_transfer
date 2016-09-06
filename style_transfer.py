@@ -160,7 +160,7 @@ class CaffeModel:
 
         return layers
 
-    def eval_sc_grad_tile(self, img, layers, content_layers, style_layers,
+    def eval_sc_grad_tile(self, img, start, layers, content_layers, style_layers,
                           content_weight, style_weight):
         self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
         self.data['data'] = img
@@ -174,7 +174,11 @@ class CaffeModel:
         for i, layer in enumerate(layers):
             # Compute the content and style gradients
             if layer in content_layers:
-                c_grad = self.data[layer] - self.features[layer]
+                # FIXME: adapt to different content layer sizes
+                start = start // 8
+                end = start + np.array(self.data[layer].shape[-2:])
+                feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
+                c_grad = self.data[layer] - feat
                 self.diff[layer] += normalize(c_grad)*content_weight
                 # content_loss += 0.5 * np.sum((self.data[layer] - self.features[layer])**2)
             if layer in style_layers:
@@ -194,8 +198,26 @@ class CaffeModel:
 
         return self.diff['data']
 
-    def eval_sc_grad(self, img, *args):
-        return self.eval_sc_grad_tile(img, *args)
+    def eval_sc_grad(self, *args, tile_size=256):
+        grad = np.zeros_like(self.img)
+        img_size = np.array(self.img.shape[-2:])
+        ntiles = img_size // tile_size + 1
+        tile_size = img_size // ntiles
+
+        for y in range(ntiles[0]):
+            for x in range(ntiles[1]):
+                xy = np.array([y, x])
+                start = xy * tile_size
+                end = start + tile_size
+                if y == ntiles[0] - 1:
+                    end[0] = img_size[0]
+                if x == ntiles[1] - 1:
+                    end[1] = img_size[1]
+                tile = self.img[:, start[0]:end[0], start[1]:end[1]]
+                grad_tile = self.eval_sc_grad_tile(tile, start, *args)
+                grad[:, start[0]:end[0], start[1]:end[1]] = grad_tile
+
+        return grad
 
     def roll(self, xy):
         """Roll image and feature maps. VGG only."""
@@ -237,16 +259,18 @@ class CaffeModel:
             optimizer.roll(xy*8)
 
             old_params = optimizer.apply_nesterov_step()
-            grad = self.eval_sc_grad(self.img, layers, content_layers, style_layers,
+            grad = self.eval_sc_grad(layers, content_layers, style_layers,
                                      content_weight, style_weight)
 
             # Compute total variation gradient
             tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
             tv_grad = convolve(self.img, tv_kernel, mode='wrap')/255
-            tv_grad[:, 0:1, :] *= 5
-            tv_grad[:, -2:-1, :] *= 5
-            tv_grad[:, :, 0:1] *= 5
-            tv_grad[:, :, -2:-1] *= 5
+            tv_mask = np.ones_like(tv_grad)
+            tv_mask[:, :2, :] = 5
+            tv_mask[:, -2:, :] = 5
+            tv_mask[:, :, :2] = 5
+            tv_mask[:, :, -2:] = 5
+            tv_grad *= tv_mask
 
             # Compute a weighted sum of normalized gradients
             grad = normalize(grad) + tv_weight*tv_grad
@@ -309,7 +333,7 @@ class Progress:
         self.update_size = update_size
         self.loss = loss
         if self.save_every and self.step % self.save_every == 0:
-            self.model.get_image().save('out_%04d.png' % self.step)
+            self.model.current_output.save('out_%04d.png' % self.step)
         if self.step == 1:
             if self.url:
                 webbrowser.open(self.url)
@@ -354,8 +378,8 @@ class ProgressHandler(BaseHTTPRequestHandler):
                 't': self.server.progress.t,
                 'update_size': self.server.progress.update_size,
                 'loss': self.server.progress.loss,
-                'w': self.server.model.data['data'].shape[2],
-                'h': self.server.model.data['data'].shape[1],
+                'w': self.server.model.current_output.size[0],
+                'h': self.server.model.current_output.size[1],
             }).encode())
         elif self.path == '/out.png':
             self.send_response(200)
