@@ -5,9 +5,11 @@
 # pylint: disable=invalid-name, too-many-arguments, too-many-instance-attributes, too-many-locals
 
 import argparse
+from collections import namedtuple
 from fractions import Fraction
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import io
+import multiprocessing as mp
 import os
 from socketserver import ThreadingMixIn
 import sys
@@ -18,6 +20,9 @@ import webbrowser
 import numpy as np
 from PIL import Image
 from scipy.ndimage import convolve, convolve1d
+
+# Spawn new Python interpreters - forking mixes badly with caffe
+CTX = mp.get_context('spawn')
 
 # Machine epsilon for float32
 EPS = np.finfo(np.float32).eps
@@ -91,15 +96,105 @@ class Optimizer:
         self.m1[:] = np.roll(np.roll(self.m1, x, 2), y, 1)
         self.m2[:] = np.roll(np.roll(self.m2, x, 2), y, 1)
 
+FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
+FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
+SCGradRequest = namedtuple(
+    'SCGradRequest', 'resp img start content_layers style_layers content_weight style_weight')
+SCGradResponse = namedtuple('SCGradResponse', 'resp grad')
+
+
+class TileWorker:
+    def __init__(self, req_q, resp_q, model, device=-1, features=None, grams=None):
+        self.req_q = req_q
+        self.resp_q = resp_q
+        self.model = None
+        self.model_info = (model.deploy, model.weights, model.mean, model.bgr)
+        self.device = device
+        self.features = features
+        self.grams = grams
+        self.proc = CTX.Process(target=self.run, daemon=True)
+        self.proc.start()
+
+    def __del__(self):
+        if not self.proc.exitcode:
+            self.proc.terminate()
+
+    def run(self):
+        if self.device >= 0:
+            os.environ['CUDA_VISIBLE_DEVICES'] = str(self.device)
+        import caffe
+        if self.device >= 0:
+            caffe.set_mode_gpu()
+        else:
+            caffe.set_mode_cpu()
+
+        caffe.set_random_seed(0)
+        np.random.seed(0)
+
+        self.model = CaffeModel(*self.model_info)
+        self.model.features = self.features
+        self.model.grams = self.grams
+
+        while True:
+            req = self.req_q.get()
+            layers = []
+
+            if isinstance(req, FeatureMapRequest):
+                for layer in reversed(self.model.layers()):
+                    if layer in req.layers:
+                        layers.append(layer)
+                features = self.model.eval_features_tile(req.img, layers, layers)
+                resp = FeatureMapResponse(req.resp, features)
+                self.resp_q.put(resp)
+
+            if isinstance(req, SCGradRequest):
+                for layer in reversed(self.model.layers()):
+                    if layer in req.content_layers or layer in req.style_layers:
+                        layers.append(layer)
+                grad = self.model.eval_sc_grad_tile(
+                    req.img, req.start, layers, req.content_layers, req.style_layers,
+                    req.content_weight, req.style_weight)
+                resp = SCGradResponse(req.resp, grad)
+                self.resp_q.put(resp)
+
+
+class TileWorkerPoolError(Exception):
+    pass
+
+
+class TileWorkerPool:
+    def __init__(self, model, devices, features=None, grams=None):
+        self.workers = []
+        self.req_q = CTX.Queue()
+        self.resp_q = CTX.Queue()
+        self.is_healthy = True
+        for device in devices:
+            self.workers.append(
+                TileWorker(self.req_q, self.resp_q, model, device, features, grams))
+
+    def __del__(self):
+        self.is_healthy = False
+        for worker in self.workers:
+            worker.__del__()
+
+    def ensure_healthy(self):
+        if not self.is_healthy:
+            raise TileWorkerPoolError('Workers already terminated')
+        for worker in self.workers:
+            if worker.proc.exitcode:
+                self.__del__()
+                raise TileWorkerPoolError('Pool malfunction; terminating')
+
 
 class CaffeModel:
     """A Caffe neural network model."""
     def __init__(self, deploy, weights, mean=(0, 0, 0), bgr=True):
         import caffe
-        self.mean = np.float32(mean)[..., None, None]
-        assert self.mean.ndim == 3
+        self.deploy = deploy
+        self.weights = weights
+        self.mean = np.float32(mean).reshape((3, 1, 1))
         self.bgr = bgr
-        self.net = caffe.Net(deploy, 1, weights=weights)
+        self.net = caffe.Net(self.deploy, 1, weights=self.weights)
         self.data = LayerIndexer(self.net, 'data')
         self.diff = LayerIndexer(self.net, 'diff')
         self.features = None
@@ -148,7 +243,7 @@ class CaffeModel:
         self.net.forward(end=layers[0])
         return {layer: self.data[layer].copy() for layer in layers if layer in feat_layers}
 
-    def eval_features_once(self, layers, feat_layers, tile_size=256):
+    def eval_features_once(self, pool, layers, feat_layers, tile_size=256):
         """Computes the set of feature maps for an image."""
         img_size = np.array(self.img.shape[-2:])
         ntiles = img_size // tile_size + 1
@@ -168,7 +263,9 @@ class CaffeModel:
                 if x == ntiles[1] - 1:
                     end[1] = img_size[1]
                 tile = self.img[:, start[0]:end[0], start[1]:end[1]]
-                feats_tile = self.eval_features_tile(tile, layers, feat_layers)
+                pool.ensure_healthy()
+                pool.req_q.put(FeatureMapRequest((start, end), tile, feat_layers))
+                _, feats_tile = pool.resp_q.get()
                 for layer, feat in feats_tile.items():
                     scale, _ = self.layer_info(layer)
                     start_f = start // scale
@@ -177,14 +274,14 @@ class CaffeModel:
 
         return features
 
-    def prepare_features(self, layers, feat_layers, tile_size=256, passes=10):
+    def prepare_features(self, pool, layers, feat_layers, tile_size=256, passes=10):
         """Averages the set of feature maps for an image over multiple passes to obscure tiling."""
         img_size = np.array(self.img.shape[-2:])
         self.features = {}
         for _ in range(passes):
             xy = np.int32(np.random.uniform(size=2) * img_size) // 32
             self.roll(xy)
-            feats = self.eval_features_once(layers, feat_layers, tile_size)
+            feats = self.eval_features_once(pool, layers, feat_layers, tile_size)
             if not self.features:
                 self.features = feats
             else:
@@ -195,7 +292,7 @@ class CaffeModel:
             self.features[layer] /= passes
         return self.features
 
-    def preprocess_images(self, content_image, style_image, content_layers, style_layers,
+    def preprocess_images(self, pool, content_image, style_image, content_layers, style_layers,
                           tile_size=256):
         """Performs preprocessing tasks on the input images."""
         # Construct list of layers to visit during the backward pass
@@ -208,13 +305,13 @@ class CaffeModel:
         if self.grams is None:
             self.grams = {}
             self.set_image(style_image)
-            feats = self.prepare_features(layers, style_layers, tile_size)
+            feats = self.prepare_features(pool, layers, style_layers, tile_size)
             for layer in sorted(feats):
                 self.grams[layer] = gram_matrix(feats[layer])
 
         # Prepare feature maps from content image
         self.set_image(content_image)
-        self.prepare_features(layers, content_layers, tile_size)
+        self.prepare_features(pool, layers, content_layers, tile_size)
 
         return layers
 
@@ -257,7 +354,8 @@ class CaffeModel:
 
         return self.diff['data']
 
-    def eval_sc_grad(self, *args, tile_size=256):
+    def eval_sc_grad(self, pool, content_layers, style_layers, content_weight, style_weight,
+                     tile_size=256):
         """Evaluates the summed style and content gradients."""
         grad = np.zeros_like(self.img)
         img_size = np.array(self.img.shape[-2:])
@@ -274,7 +372,11 @@ class CaffeModel:
                 if x == ntiles[1] - 1:
                     end[1] = img_size[1]
                 tile = self.img[:, start[0]:end[0], start[1]:end[1]]
-                grad_tile = self.eval_sc_grad_tile(tile, start, *args)
+                pool.ensure_healthy()
+                pool.req_q.put(
+                    SCGradRequest((start, end), tile, start, content_layers, style_layers,
+                                  content_weight, style_weight))
+                _, grad_tile = pool.resp_q.get()
                 grad[:, start[0]:end[0], start[1]:end[1]] = grad_tile
 
         return grad
@@ -291,13 +393,15 @@ class CaffeModel:
 
     def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
                  step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None,
-                 initial_image=None, jitter=0, tile_size=256):
+                 initial_image=None, jitter=0, tile_size=256, devices=(-1,)):
         """Performs style transfer from style_image to content_image."""
         content_weight /= max(len(content_layers), 1)
         style_weight /= max(len(style_layers), 1)
 
-        layers = self.preprocess_images(content_image, style_image, content_layers, style_layers,
-                                        tile_size)
+        pool = TileWorkerPool(self, devices)
+        layers = self.preprocess_images(pool, content_image, style_image, content_layers,
+                                        style_layers, tile_size)
+        pool = TileWorkerPool(self, devices, features=self.features, grams=self.grams)
 
         # Initialize the model with a noise image
         w, h = content_image.size
@@ -320,7 +424,7 @@ class CaffeModel:
 
             # Compute style+content gradient
             old_params = optimizer.apply_nesterov_step()
-            grad = self.eval_sc_grad(layers, content_layers, style_layers,
+            grad = self.eval_sc_grad(pool, content_layers, style_layers,
                                      content_weight, style_weight, tile_size=tile_size)
 
             # Compute total variation gradient
@@ -523,7 +627,8 @@ def parse_args():
         '--save-every', metavar='N', type=int, default=0, help='save the image every n steps'
     )
     parser.add_argument(
-        '--gpu', type=int, default=0, help='gpu number to use (-1 for cpu)'
+        '--devices', nargs='+', metavar='DEVICE', type=int, default=[0],
+        help='device numbers to use (-1 for cpu)'
     )
     parser.add_argument(
         '--jitter', type=int, default=128,
@@ -540,13 +645,8 @@ def main():
     args = parse_args()
 
     os.environ['GLOG_minloglevel'] = '2'
-    if args.gpu == -1:
-        import caffe
-        caffe.set_mode_cpu()
-    else:
-        os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu)
-        import caffe
-        caffe.set_mode_gpu()
+    import caffe
+    caffe.set_mode_cpu()
 
     model = CaffeModel(args.model, args.weights, args.mean)
     if args.list_layers:
@@ -573,14 +673,13 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print('\nWatch the progress at: %s\n' % url)
 
-    caffe.set_random_seed(0)
     np.random.seed(0)
     try:
         output_image = model.transfer_multiscale(
             sizes, args.iterations, content_image, style_image, args.content_layers,
             args.style_layers, step_size=args.step_size, content_weight=args.content_weight,
             tv_weight=args.tv_weight, callback=server.progress, jitter=args.jitter,
-            tile_size=args.tile_size)
+            tile_size=args.tile_size, devices=args.devices)
     except KeyboardInterrupt:
         output_image = model.get_image()
     print('Saving output as %s.' % args.output_image)
