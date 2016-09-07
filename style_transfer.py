@@ -177,7 +177,8 @@ class CaffeModel:
 
         return features
 
-    def preprocess_images(self, content_image, style_image, content_layers, style_layers):
+    def preprocess_images(self, content_image, style_image, content_layers, style_layers,
+                          tile_size=256):
         """Performs preprocessing tasks on the input images."""
         # Construct list of layers to visit during the backward pass
         layers = []
@@ -187,13 +188,13 @@ class CaffeModel:
 
         # Prepare feature maps from content image
         self.set_image(content_image)
-        self.features = self.eval_features(layers, content_layers)
+        self.features = self.eval_features(layers, content_layers, tile_size)
 
         # Prepare Gram matrices from style image
         if self.grams is None:
             self.grams = {}
             self.set_image(style_image)
-            feats = self.eval_features(layers, style_layers)
+            feats = self.eval_features(layers, style_layers, tile_size)
             for layer in sorted(feats):
                 self.grams[layer] = gram_matrix(feats[layer])
 
@@ -272,12 +273,13 @@ class CaffeModel:
 
     def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
                  step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None,
-                 initial_image=None):
+                 initial_image=None, jitter=0, tile_size=256):
         """Performs style transfer from style_image to content_image."""
         content_weight /= max(len(content_layers), 1)
         style_weight /= max(len(style_layers), 1)
 
-        layers = self.preprocess_images(content_image, style_image, content_layers, style_layers)
+        layers = self.preprocess_images(content_image, style_image, content_layers, style_layers,
+                                        tile_size)
 
         # Initialize the model with a noise image
         w, h = content_image.size
@@ -292,13 +294,13 @@ class CaffeModel:
         print('tv loss', file=log, flush=True)
 
         for step in range(1, iterations+1):
-            xy = np.int32(np.random.uniform(0, 16, size=2))-8
+            xy = np.int32(np.random.uniform(0, jitter, size=2)) - jitter // 2
             self.roll(xy)
-            optimizer.roll(xy*8)
+            optimizer.roll(xy*8)  # FIXME: remove dependency on scale=8
 
             old_params = optimizer.apply_nesterov_step()
             grad = self.eval_sc_grad(layers, content_layers, style_layers,
-                                     content_weight, style_weight)
+                                     content_weight, style_weight, tile_size=tile_size)
 
             # Compute total variation gradient
             tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
@@ -498,6 +500,13 @@ def parse_args():
     parser.add_argument(
         '--gpu', type=int, default=0, help='gpu number to use (-1 for cpu)'
     )
+    parser.add_argument(
+        '--jitter', type=int, default=16,
+        help='Amount to roll the image each iteration to obscure tile seams.'
+    )
+    parser.add_argument(
+        '--tile-size', type=int, default=256, help='The maximum rendering tile size.'
+    )
     return parser.parse_args()
 
 
@@ -545,7 +554,8 @@ def main():
         output_image = model.transfer_multiscale(
             sizes, args.iterations, content_image, style_image, args.content_layers,
             args.style_layers, step_size=args.step_size, content_weight=args.content_weight,
-            tv_weight=args.tv_weight, callback=server.progress)
+            tv_weight=args.tv_weight, callback=server.progress, jitter=args.jitter,
+            tile_size=args.tile_size)
     except KeyboardInterrupt:
         output_image = model.get_image()
     print('Saving output as %s.' % args.output_image)
