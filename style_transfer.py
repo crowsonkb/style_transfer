@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import io
 import multiprocessing as mp
 import os
+import queue
 from socketserver import ThreadingMixIn
 import sys
 import threading
@@ -104,14 +105,15 @@ SCGradResponse = namedtuple('SCGradResponse', 'resp grad')
 
 
 class TileWorker:
-    def __init__(self, req_q, resp_q, model, device=-1, features=None, grams=None):
+    def __init__(self, req_q, resp_q, fg_q, model, device=-1):
         self.req_q = req_q
         self.resp_q = resp_q
+        self.fg_q = fg_q
         self.model = None
         self.model_info = (model.deploy, model.weights, model.mean, model.bgr)
         self.device = device
-        self.features = features
-        self.grams = grams
+        self.features = None
+        self.grams = None
         self.proc = CTX.Process(target=self.run, daemon=True)
         self.proc.start()
 
@@ -133,12 +135,15 @@ class TileWorker:
 
         self.model = CaffeModel(*self.model_info)
         self.model.img = np.zeros((3, 1, 1), dtype=np.float32)
-        self.model.features = self.features
-        self.model.grams = self.grams
 
         while True:
             req = self.req_q.get()
             layers = []
+
+            try:
+                self.model.features, self.model.grams = self.fg_q.get_nowait()
+            except queue.Empty:
+                pass
 
             if isinstance(req, FeatureMapRequest):
                 for layer in reversed(self.model.layers()):
@@ -166,14 +171,14 @@ class TileWorkerPoolError(Exception):
 
 
 class TileWorkerPool:
-    def __init__(self, model, devices, features=None, grams=None):
+    def __init__(self, model, devices):
         self.workers = []
         self.req_q = CTX.Queue()
         self.resp_q = CTX.Queue()
         self.is_healthy = True
         for device in devices:
             self.workers.append(
-                TileWorker(self.req_q, self.resp_q, model, device, features, grams))
+                TileWorker(self.req_q, self.resp_q, CTX.Queue(), model, device))
 
     def __del__(self):
         self.is_healthy = False
@@ -187,6 +192,10 @@ class TileWorkerPool:
             if worker.proc.exitcode:
                 self.__del__()
                 raise TileWorkerPoolError('Pool malfunction; terminating')
+
+    def set_features_and_grams(self, features, grams):
+        for worker in self.workers:
+            worker.fg_q.put((features, grams))
 
 
 class CaffeModel:
@@ -408,8 +417,7 @@ class CaffeModel:
         pool = TileWorkerPool(self, devices)
         layers = self.preprocess_images(pool, content_image, style_image, content_layers,
                                         style_layers, tile_size)
-        # TODO: don't create new TileWorkerPool just to propagate features and grams
-        pool = TileWorkerPool(self, devices, features=self.features, grams=self.grams)
+        pool.set_features_and_grams(self.features, self.grams)
 
         # Initialize the model with a noise image
         w, h = content_image.size
