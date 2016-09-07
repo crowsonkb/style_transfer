@@ -38,7 +38,7 @@ def gram_matrix(feat):
     """Computes the Gram matrix corresponding to a feature map."""
     n, mh, mw = feat.shape
     feat = feat.reshape((n, mh * mw))
-    gram = feat @ feat.T / feat.size
+    gram = feat @ feat.T / np.float32(feat.size)
     return gram
 
 
