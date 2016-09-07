@@ -131,6 +131,48 @@ class CaffeModel:
                 layers.append(layer)
         return layers
 
+    def layer_info(self, layer):
+        assert layer.startswith('conv') or layer.startswith('pool')
+        level = int(layer[4])-1
+        channels = (64, 128, 256, 512, 512)[level]
+        if layer.startswith('pool'):
+            level += 1
+        return 2**level, channels
+
+    def eval_features_tile(self, img, layers, feat_layers):
+        self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
+        self.data['data'] = img
+        self.net.forward(end=layers[0])
+        return {layer: self.data[layer].copy() for layer in layers if layer in feat_layers}
+
+    def eval_features(self, layers, feat_layers, tile_size=256):
+        img_size = np.array(self.img.shape[-2:])
+        ntiles = img_size // tile_size + 1
+        tile_size = img_size // ntiles
+        features = {}
+        for layer in feat_layers:
+            scale, channels = self.layer_info(layer)
+            shape = (channels,) + tuple(np.int32(np.ceil(img_size / scale)))
+            features[layer] = np.zeros(shape, dtype=np.float32)
+        for y in range(ntiles[0]):
+            for x in range(ntiles[1]):
+                xy = np.array([y, x])
+                start = xy * tile_size
+                end = start + tile_size
+                if y == ntiles[0] - 1:
+                    end[0] = img_size[0]
+                if x == ntiles[1] - 1:
+                    end[1] = img_size[1]
+                tile = self.img[:, start[0]:end[0], start[1]:end[1]]
+                feats_tile = self.eval_features_tile(tile, layers, feat_layers)
+                for layer, feat in feats_tile.items():
+                    scale, _ = self.layer_info(layer)
+                    start_f = start // scale
+                    end_f = start_f + np.array(feat.shape[-2:])
+                    features[layer][:, start_f[0]:end_f[0], start_f[1]:end_f[1]] = feat
+
+        return features
+
     def preprocess_images(self, content_image, style_image, content_layers, style_layers):
         """Performs preprocessing tasks on the input images."""
         # Construct list of layers to visit during the backward pass
@@ -140,23 +182,16 @@ class CaffeModel:
                 layers.append(layer)
 
         # Prepare feature maps from content image
-        self.features = {}
         self.set_image(content_image)
-        self.net.blobs['data'].reshape(1, 3, *self.img.shape[-2:])
-        self.data['data'] = self.img
-        self.net.forward(end=layers[0])
-        for layer in content_layers:
-            self.features[layer] = self.data[layer].copy()
+        self.features = self.eval_features(layers, content_layers)
 
         # Prepare Gram matrices from style image
         if self.grams is None:
             self.grams = {}
             self.set_image(style_image)
-            self.net.blobs['data'].reshape(1, 3, *self.img.shape[-2:])
-            self.data['data'] = self.img
-            self.net.forward(end=layers[0])
-            for layer in style_layers:
-                self.grams[layer] = gram_matrix(self.data[layer])
+            feats = self.eval_features(layers, style_layers)
+            for layer in sorted(feats):
+                self.grams[layer] = gram_matrix(feats[layer])
 
         return layers
 
@@ -174,11 +209,8 @@ class CaffeModel:
         for i, layer in enumerate(layers):
             # Compute the content and style gradients
             if layer in content_layers:
-                assert layer.startswith('conv') or layer.startswith('pool')
-                level = int(layer[4])-1
-                if layer.startswith('pool'):
-                    level += 1
-                start = start // 2**level
+                scale, _ = self.layer_info(layer)
+                start = start // scale
                 end = start + np.array(self.data[layer].shape[-2:])
                 feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
                 c_grad = self.data[layer] - feat
@@ -225,12 +257,9 @@ class CaffeModel:
     def roll(self, xy):
         """Roll image and feature maps. VGG only."""
         for layer, feat in self.features.items():
-            assert layer.startswith('conv') or layer.startswith('pool')
-            level = int(layer[4])
-            if layer.startswith('pool'):
-                level += 1
-            assert level <= 4
-            x, y = xy * 2**(4-level)
+            scale, _ = self.layer_info(layer)
+            assert scale <= 8
+            x, y = xy * 8 // scale
             self.features[layer] = np.roll(np.roll(feat, x, 2), y, 1)
         x, y = xy * 8
         self.img[:] = np.roll(np.roll(self.img, x, 2), y, 1)
