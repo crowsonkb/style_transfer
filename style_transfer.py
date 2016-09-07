@@ -267,13 +267,14 @@ class CaffeModel:
                     end[1] = img_size[1]
                 tile = self.img[:, start[0]:end[0], start[1]:end[1]]
                 pool.ensure_healthy()
-                pool.req_q.put(FeatureMapRequest((start, end), tile, feat_layers))
-                _, feats_tile = pool.resp_q.get()
-                for layer, feat in feats_tile.items():
-                    scale, _ = self.layer_info(layer)
-                    start_f = start // scale
-                    end_f = start_f + np.array(feat.shape[-2:])
-                    features[layer][:, start_f[0]:end_f[0], start_f[1]:end_f[1]] = feat
+                pool.req_q.put(FeatureMapRequest(start, tile, feat_layers))
+        for _ in range(np.prod(ntiles)):
+            start, feats_tile = pool.resp_q.get()
+            for layer, feat in feats_tile.items():
+                scale, _ = self.layer_info(layer)
+                start_f = start // scale
+                end_f = start_f + np.array(feat.shape[-2:])
+                features[layer][:, start_f[0]:end_f[0], start_f[1]:end_f[1]] = feat
 
         return features
 
@@ -305,6 +306,7 @@ class CaffeModel:
                 layers.append(layer)
 
         # Prepare Gram matrices from style image
+        print('Preprocessing the style image...')
         if self.grams is None:
             self.grams = {}
             self.set_image(style_image)
@@ -313,6 +315,7 @@ class CaffeModel:
                 self.grams[layer] = gram_matrix(feats[layer])
 
         # Prepare feature maps from content image
+        print('Preprocessing the content image...')
         self.set_image(content_image)
         self.prepare_features(pool, layers, content_layers, tile_size)
 
@@ -379,8 +382,9 @@ class CaffeModel:
                 pool.req_q.put(
                     SCGradRequest((start, end), tile, roll, start, content_layers, style_layers,
                                   content_weight, style_weight))
-                _, grad_tile = pool.resp_q.get()
-                grad[:, start[0]:end[0], start[1]:end[1]] = grad_tile
+        for _ in range(np.prod(ntiles)):
+            (start, end), grad_tile = pool.resp_q.get()
+            grad[:, start[0]:end[0], start[1]:end[1]] = grad_tile
 
         return grad
 
