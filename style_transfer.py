@@ -151,7 +151,7 @@ class TileWorker:
                 for layer in reversed(self.model.layers()):
                     if layer in req.layers:
                         layers.append(layer)
-                features = self.model.eval_features_tile(req.img, layers, layers)
+                features = self.model.eval_features_tile(req.img, layers)
                 resp = FeatureMapResponse(req.resp, features)
                 self.resp_q.put(resp)
 
@@ -254,14 +254,14 @@ class CaffeModel:
             level += 1
         return 2**level, channels
 
-    def eval_features_tile(self, img, layers, feat_layers):
+    def eval_features_tile(self, img, layers):
         """Computes a single tile in a set of feature maps."""
         self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
         self.data['data'] = img
         self.net.forward(end=layers[0])
-        return {layer: self.data[layer].copy() for layer in layers if layer in feat_layers}
+        return {layer: self.data[layer].copy() for layer in layers}
 
-    def eval_features_once(self, pool, layers, feat_layers, tile_size=256):
+    def eval_features_once(self, pool, layers, tile_size=256):
         """Computes the set of feature maps for an image."""
         img_size = np.array(self.img.shape[-2:])
         ntiles = (img_size-1) // tile_size + 1
@@ -269,7 +269,7 @@ class CaffeModel:
         print('Using %dx%d tiles of size %dx%d.' %
               (ntiles[1], ntiles[0], tile_size[1], tile_size[0]))
         features = {}
-        for layer in feat_layers:
+        for layer in layers:
             scale, channels = self.layer_info(layer)
             shape = (channels,) + tuple(np.int32(np.ceil(img_size / scale)))
             features[layer] = np.zeros(shape, dtype=np.float32)
@@ -284,7 +284,7 @@ class CaffeModel:
                     end[1] = img_size[1]
                 tile = self.img[:, start[0]:end[0], start[1]:end[1]]
                 pool.ensure_healthy()
-                pool.req_q.put(FeatureMapRequest(start, tile, feat_layers))
+                pool.req_q.put(FeatureMapRequest(start, tile, layers))
         for _ in range(np.prod(ntiles)):
             start, feats_tile = pool.resp_q.get()
             for layer, feat in feats_tile.items():
@@ -295,7 +295,7 @@ class CaffeModel:
 
         return features
 
-    def prepare_features(self, pool, layers, feat_layers, tile_size=256, passes=10):
+    def prepare_features(self, pool, layers, tile_size=256, passes=10):
         """Averages the set of feature maps for an image over multiple passes to obscure tiling."""
         img_size = np.array(self.img.shape[-2:])
         if max(*img_size) <= tile_size:
@@ -306,7 +306,7 @@ class CaffeModel:
             if i > 0:
                 xy = np.int32(np.random.uniform(size=2) * img_size) // 32
             self.roll(xy)
-            feats = self.eval_features_once(pool, layers, feat_layers, tile_size)
+            feats = self.eval_features_once(pool, layers, tile_size)
             if not self.features:
                 self.features = feats
             else:
@@ -331,14 +331,14 @@ class CaffeModel:
         if self.grams is None:
             self.grams = {}
             self.set_image(style_image)
-            feats = self.prepare_features(pool, layers, style_layers, tile_size)
+            feats = self.prepare_features(pool, style_layers, tile_size)
             for layer in feats:
                 self.grams[layer] = gram_matrix(feats[layer])
 
         # Prepare feature maps from content image
         print('Preprocessing the content image...')
         self.set_image(content_image)
-        self.prepare_features(pool, layers, content_layers, tile_size)
+        self.prepare_features(pool, content_layers, tile_size)
 
         return layers
 
