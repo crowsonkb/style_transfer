@@ -264,8 +264,10 @@ class CaffeModel:
     def eval_features_once(self, pool, layers, feat_layers, tile_size=256):
         """Computes the set of feature maps for an image."""
         img_size = np.array(self.img.shape[-2:])
-        ntiles = img_size // tile_size + 1
+        ntiles = (img_size-1) // tile_size + 1
         tile_size = img_size // ntiles
+        print('Using %dx%d tiles of size %dx%d.' %
+              (ntiles[1], ntiles[0], tile_size[1], tile_size[0]))
         features = {}
         for layer in feat_layers:
             scale, channels = self.layer_info(layer)
@@ -296,9 +298,13 @@ class CaffeModel:
     def prepare_features(self, pool, layers, feat_layers, tile_size=256, passes=10):
         """Averages the set of feature maps for an image over multiple passes to obscure tiling."""
         img_size = np.array(self.img.shape[-2:])
+        if max(*img_size) <= tile_size:
+            passes = 1
         self.features = {}
-        for _ in range(passes):
-            xy = np.int32(np.random.uniform(size=2) * img_size) // 32
+        for i in range(passes):
+            xy = np.array((0, 0))
+            if i > 0:
+                xy = np.int32(np.random.uniform(size=2) * img_size) // 32
             self.roll(xy)
             feats = self.eval_features_once(pool, layers, feat_layers, tile_size)
             if not self.features:
@@ -380,7 +386,7 @@ class CaffeModel:
         """Evaluates the summed style and content gradients."""
         grad = np.zeros_like(self.img)
         img_size = np.array(self.img.shape[-2:])
-        ntiles = img_size // tile_size + 1
+        ntiles = (img_size-1) // tile_size + 1
         tile_size = img_size // ntiles
 
         for y in range(ntiles[0]):
@@ -440,7 +446,9 @@ class CaffeModel:
         for step in range(1, iterations+1):
             # Forward jitter
             jitter_scale, _ = self.layer_info([l for l in layers if l in content_layers][0])
-            xy = (np.int32(np.random.uniform(0, jitter, size=2)) - jitter) // jitter_scale // 2
+            xy = np.array((0, 0))
+            if max(*self.img.shape[-2:]) > tile_size:
+                xy = (np.int32(np.random.uniform(0, jitter, size=2)) - jitter) // jitter_scale // 2
             self.roll(xy, jitter_scale=jitter_scale)
             optimizer.roll(xy * jitter_scale)
 
@@ -614,7 +622,7 @@ def parse_args():
     parser.add_argument(
         '--step-size', '-st', type=ffloat, default=2, help='the step size (iteration strength)')
     parser.add_argument(
-        '--size', '-s', nargs='+', type=int, default=[250], help='the output size(s)')
+        '--size', '-s', nargs='+', type=int, default=[256], help='the output size(s)')
     parser.add_argument(
         '--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor')
     parser.add_argument(
