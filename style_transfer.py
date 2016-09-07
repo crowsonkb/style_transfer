@@ -261,7 +261,7 @@ class CaffeModel:
         self.net.forward(end=layers[0])
         return {layer: self.data[layer].copy() for layer in layers}
 
-    def eval_features_once(self, pool, layers, tile_size=256):
+    def eval_features_once(self, pool, layers, tile_size=512):
         """Computes the set of feature maps for an image."""
         img_size = np.array(self.img.shape[-2:])
         ntiles = (img_size-1) // tile_size + 1
@@ -295,7 +295,7 @@ class CaffeModel:
 
         return features
 
-    def prepare_features(self, pool, layers, tile_size=256, passes=10):
+    def prepare_features(self, pool, layers, tile_size=512, passes=10):
         """Averages the set of feature maps for an image over multiple passes to obscure tiling."""
         img_size = np.array(self.img.shape[-2:])
         if max(*img_size) <= tile_size:
@@ -318,7 +318,7 @@ class CaffeModel:
         return self.features
 
     def preprocess_images(self, pool, content_image, style_image, content_layers, style_layers,
-                          tile_size=256):
+                          tile_size=512):
         """Performs preprocessing tasks on the input images."""
         # Construct list of layers to visit during the backward pass
         layers = []
@@ -382,7 +382,7 @@ class CaffeModel:
         return self.diff['data']
 
     def eval_sc_grad(self, pool, roll, content_layers, style_layers, content_weight, style_weight,
-                     tile_size=256):
+                     tile_size=512):
         """Evaluates the summed style and content gradients."""
         grad = np.zeros_like(self.img)
         img_size = np.array(self.img.shape[-2:])
@@ -421,7 +421,7 @@ class CaffeModel:
 
     def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
                  step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None,
-                 initial_image=None, jitter=0, tile_size=256, devices=(-1,)):
+                 initial_image=None, tile_size=512, devices=(-1,)):
         """Performs style transfer from style_image to content_image."""
         content_weight /= max(len(content_layers), 1)
         style_weight /= max(len(style_layers), 1)
@@ -447,8 +447,9 @@ class CaffeModel:
             # Forward jitter
             jitter_scale, _ = self.layer_info([l for l in layers if l in content_layers][0])
             xy = np.array((0, 0))
-            if max(*self.img.shape[-2:]) > tile_size:
-                xy = (np.int32(np.random.uniform(0, jitter, size=2)) - jitter) // jitter_scale // 2
+            img_size = np.array(self.img.shape[-2:])
+            if max(*img_size) > tile_size:
+                xy = np.int32(np.random.uniform(size=2) * img_size) // jitter_scale // 2
             self.roll(xy, jitter_scale=jitter_scale)
             optimizer.roll(xy * jitter_scale)
 
@@ -665,10 +666,7 @@ def parse_args():
         '--devices', nargs='+', metavar='DEVICE', type=int, default=[0],
         help='device numbers to use (-1 for cpu)')
     parser.add_argument(
-        '--jitter', type=int, default=128,
-        help='the random translation size applied the image each iteration to obscure tile seams')
-    parser.add_argument(
-        '--tile-size', type=int, default=256, help='the maximum rendering tile size')
+        '--tile-size', type=int, default=512, help='the maximum rendering tile size')
     return parser.parse_args()
 
 
@@ -676,7 +674,7 @@ def main():
     """CLI interface for style transfer."""
     args = parse_args()
 
-    os.environ['GLOG_minloglevel'] = '2'
+    os.environ['GLOG_minloglevel'] = '3'
     import caffe
     caffe.set_mode_cpu()
 
@@ -711,8 +709,8 @@ def main():
         output_image = model.transfer_multiscale(
             sizes, args.iterations, content_image, style_image, args.content_layers,
             args.style_layers, step_size=args.step_size, content_weight=args.content_weight,
-            tv_weight=args.tv_weight, callback=server.progress, jitter=args.jitter,
-            tile_size=args.tile_size, devices=args.devices)
+            tv_weight=args.tv_weight, callback=server.progress, tile_size=args.tile_size,
+            devices=args.devices)
     except KeyboardInterrupt:
         output_image = model.get_image()
     print('Saving output as %s.' % args.output_image)
