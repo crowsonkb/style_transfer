@@ -86,6 +86,7 @@ class Optimizer:
         return old_params
 
     def roll(self, xy):
+        """Rolls the optimizer's internal state."""
         x, y = xy
         self.m1[:] = np.roll(np.roll(self.m1, x, 2), y, 1)
         self.m2[:] = np.roll(np.roll(self.m2, x, 2), y, 1)
@@ -132,6 +133,7 @@ class CaffeModel:
         return layers
 
     def layer_info(self, layer):
+        """Returns the number of channels and the scale factor vs. the image for a VGG layer."""
         assert layer.startswith('conv') or layer.startswith('pool')
         level = int(layer[4])-1
         channels = (64, 128, 256, 512, 512)[level]
@@ -140,12 +142,14 @@ class CaffeModel:
         return 2**level, channels
 
     def eval_features_tile(self, img, layers, feat_layers):
+        """Computes a single tile in a set of feature maps."""
         self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
         self.data['data'] = img
         self.net.forward(end=layers[0])
         return {layer: self.data[layer].copy() for layer in layers if layer in feat_layers}
 
     def eval_features(self, layers, feat_layers, tile_size=256):
+        """Computes the set of feature maps for an image."""
         img_size = np.array(self.img.shape[-2:])
         ntiles = img_size // tile_size + 1
         tile_size = img_size // ntiles
@@ -197,6 +201,7 @@ class CaffeModel:
 
     def eval_sc_grad_tile(self, img, start, layers, content_layers, style_layers,
                           content_weight, style_weight):
+        """Evaluates an individual style+content gradient tile."""
         self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
         self.data['data'] = img
 
@@ -234,6 +239,7 @@ class CaffeModel:
         return self.diff['data']
 
     def eval_sc_grad(self, *args, tile_size=256):
+        """Evaluates the summed style and content gradients."""
         grad = np.zeros_like(self.img)
         img_size = np.array(self.img.shape[-2:])
         ntiles = img_size // tile_size + 1
@@ -255,7 +261,7 @@ class CaffeModel:
         return grad
 
     def roll(self, xy):
-        """Roll image and feature maps. VGG only."""
+        """Rolls image and feature maps."""
         for layer, feat in self.features.items():
             scale, _ = self.layer_info(layer)
             assert scale <= 8
