@@ -646,19 +646,15 @@ def parse_args():
     parser.add_argument(
         '--list-layers', action='store_true', help='list the model\'s layers')
     parser.add_argument(
-        '--save-every', metavar='N', type=int, default=0, help='save the image every n steps'
-    )
+        '--save-every', metavar='N', type=int, default=0, help='save the image every n steps')
     parser.add_argument(
         '--devices', nargs='+', metavar='DEVICE', type=int, default=[0],
-        help='device numbers to use (-1 for cpu)'
-    )
+        help='device numbers to use (-1 for cpu)')
     parser.add_argument(
         '--jitter', type=int, default=128,
-        help='the random translation size applied the image each iteration to obscure tile seams'
-    )
+        help='the random translation size applied the image each iteration to obscure tile seams')
     parser.add_argument(
-        '--tile-size', type=int, default=256, help='the maximum rendering tile size'
-    )
+        '--tile-size', type=int, default=256, help='the maximum rendering tile size')
     return parser.parse_args()
 
 
