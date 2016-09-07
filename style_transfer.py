@@ -547,6 +547,7 @@ class ProgressServer(ThreadingMixIn, HTTPServer):
     """HTTP server class."""
     model = None
     progress = None
+    hidpi = False
 
 
 class ProgressHandler(BaseHTTPRequestHandler):
@@ -571,14 +572,17 @@ class ProgressHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
+            scale = 1
+            if self.server.hidpi:
+                scale = 2
             self.wfile.write((self.index % {
                 'step': self.server.progress.step,
                 'steps': self.server.progress.steps,
                 't': self.server.progress.t,
                 'update_size': self.server.progress.update_size,
                 'loss': self.server.progress.loss,
-                'w': self.server.model.current_output.size[0],
-                'h': self.server.model.current_output.size[1],
+                'w': self.server.model.current_output.size[0] / scale,
+                'h': self.server.model.current_output.size[1] / scale,
             }).encode())
         elif self.path == '/out.png':
             self.send_response(200)
@@ -642,6 +646,8 @@ def parse_args():
     parser.add_argument(
         '--no-browser', action='store_true', help='don\'t open a web browser')
     parser.add_argument(
+        '--hidpi', '-2', action='store_true', help='display the image at 2x scale in the browser')
+    parser.add_argument(
         '--model', default='VGG_ILSVRC_19_layers_deploy.prototxt',
         help='the Caffe deploy.prototxt for the model to use')
     parser.add_argument(
@@ -691,6 +697,7 @@ def main():
     url = 'http://127.0.0.1:%d/' % args.port
     server = ProgressServer(server_address, ProgressHandler)
     server.model = model
+    server.hidpi = args.hidpi
     progress_args = {}
     if not args.no_browser:
         progress_args['url'] = url
