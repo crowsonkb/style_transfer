@@ -105,6 +105,7 @@ SCGradResponse = namedtuple('SCGradResponse', 'resp grad')
 
 
 class TileWorker:
+    """Computes feature maps and gradients on the specified device in a separate process."""
     def __init__(self, req_q, resp_q, fg_q, model, device=-1):
         self.req_q = req_q
         self.resp_q = resp_q
@@ -122,6 +123,7 @@ class TileWorker:
             self.proc.terminate()
 
     def run(self):
+        """This method runs in the new process."""
         if self.device >= 0:
             os.environ['CUDA_VISIBLE_DEVICES'] = str(self.device)
         import caffe
@@ -167,10 +169,12 @@ class TileWorker:
 
 
 class TileWorkerPoolError(Exception):
+    """Indicates abnormal termination of TileWorker processes."""
     pass
 
 
 class TileWorkerPool:
+    """A collection of TileWorkers."""
     def __init__(self, model, devices):
         self.workers = []
         self.req_q = CTX.Queue()
@@ -186,6 +190,7 @@ class TileWorkerPool:
             worker.__del__()
 
     def ensure_healthy(self):
+        """Checks for abnormal pool process termination."""
         if not self.is_healthy:
             raise TileWorkerPoolError('Workers already terminated')
         for worker in self.workers:
@@ -194,6 +199,7 @@ class TileWorkerPool:
                 raise TileWorkerPoolError('Pool malfunction; terminating')
 
     def set_features_and_grams(self, features, grams):
+        """Propagates feature maps and Gram matrices to all TileWorkers."""
         for worker in self.workers:
             worker.fg_q.put((features, grams))
 
