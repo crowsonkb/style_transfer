@@ -332,7 +332,7 @@ class CaffeModel:
             self.grams = {}
             self.set_image(style_image)
             feats = self.prepare_features(pool, layers, style_layers, tile_size)
-            for layer in sorted(feats):
+            for layer in feats:
                 self.grams[layer] = gram_matrix(feats[layer])
 
         # Prepare feature maps from content image
@@ -685,7 +685,7 @@ def main():
     content_image = Image.open(args.content_image).convert('RGB')
     style_image = Image.open(args.style_image).convert('RGB')
     style_image = resize_to_fit(style_image, sizes[-1]*args.style_scale)
-    print('Resized style image to %dx%d' % style_image.size)
+    print('Resized style image to %dx%d.' % style_image.size)
 
     server_address = ('', args.port)
     url = 'http://127.0.0.1:%d/' % args.port
