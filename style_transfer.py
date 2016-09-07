@@ -99,7 +99,7 @@ class Optimizer:
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
 SCGradRequest = namedtuple(
-    'SCGradRequest', 'resp img start content_layers style_layers content_weight style_weight')
+    'SCGradRequest', 'resp img roll start content_layers style_layers content_weight style_weight')
 SCGradResponse = namedtuple('SCGradResponse', 'resp grad')
 
 
@@ -132,6 +132,7 @@ class TileWorker:
         np.random.seed(0)
 
         self.model = CaffeModel(*self.model_info)
+        self.model.img = np.zeros((3, 1, 1), dtype=np.float32)
         self.model.features = self.features
         self.model.grams = self.grams
 
@@ -151,9 +152,11 @@ class TileWorker:
                 for layer in reversed(self.model.layers()):
                     if layer in req.content_layers or layer in req.style_layers:
                         layers.append(layer)
+                self.model.roll(req.roll, jitter_scale=1)
                 grad = self.model.eval_sc_grad_tile(
                     req.img, req.start, layers, req.content_layers, req.style_layers,
                     req.content_weight, req.style_weight)
+                self.model.roll(-req.roll, jitter_scale=1)
                 resp = SCGradResponse(req.resp, grad)
                 self.resp_q.put(resp)
 
@@ -354,7 +357,7 @@ class CaffeModel:
 
         return self.diff['data']
 
-    def eval_sc_grad(self, pool, content_layers, style_layers, content_weight, style_weight,
+    def eval_sc_grad(self, pool, roll, content_layers, style_layers, content_weight, style_weight,
                      tile_size=256):
         """Evaluates the summed style and content gradients."""
         grad = np.zeros_like(self.img)
@@ -374,7 +377,7 @@ class CaffeModel:
                 tile = self.img[:, start[0]:end[0], start[1]:end[1]]
                 pool.ensure_healthy()
                 pool.req_q.put(
-                    SCGradRequest((start, end), tile, start, content_layers, style_layers,
+                    SCGradRequest((start, end), tile, roll, start, content_layers, style_layers,
                                   content_weight, style_weight))
                 _, grad_tile = pool.resp_q.get()
                 grad[:, start[0]:end[0], start[1]:end[1]] = grad_tile
@@ -401,6 +404,7 @@ class CaffeModel:
         pool = TileWorkerPool(self, devices)
         layers = self.preprocess_images(pool, content_image, style_image, content_layers,
                                         style_layers, tile_size)
+        # TODO: don't create new TileWorkerPool just to propagate features and grams
         pool = TileWorkerPool(self, devices, features=self.features, grams=self.grams)
 
         # Initialize the model with a noise image
@@ -424,7 +428,7 @@ class CaffeModel:
 
             # Compute style+content gradient
             old_params = optimizer.apply_nesterov_step()
-            grad = self.eval_sc_grad(pool, content_layers, style_layers,
+            grad = self.eval_sc_grad(pool, xy * jitter_scale, content_layers, style_layers,
                                      content_weight, style_weight, tile_size=tile_size)
 
             # Compute total variation gradient
