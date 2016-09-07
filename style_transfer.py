@@ -148,7 +148,7 @@ class CaffeModel:
         self.net.forward(end=layers[0])
         return {layer: self.data[layer].copy() for layer in layers if layer in feat_layers}
 
-    def eval_features(self, layers, feat_layers, tile_size=256):
+    def eval_features_once(self, layers, feat_layers, tile_size=256):
         """Computes the set of feature maps for an image."""
         img_size = np.array(self.img.shape[-2:])
         ntiles = img_size // tile_size + 1
@@ -177,6 +177,24 @@ class CaffeModel:
 
         return features
 
+    def prepare_features(self, layers, feat_layers, tile_size=256, passes=10):
+        """Averages the set of feature maps for an image over multiple passes to obscure tiling."""
+        img_size = np.array(self.img.shape[-2:])
+        self.features = {}
+        for _ in range(passes):
+            xy = np.int32(np.random.uniform(size=2) * img_size) // 32
+            self.roll(xy)
+            feats = self.eval_features_once(layers, feat_layers, tile_size)
+            if not self.features:
+                self.features = feats
+            else:
+                for layer in self.features:
+                    self.features[layer] += feats[layer]
+            self.roll(-xy)
+        for layer in self.features:
+            self.features[layer] /= passes
+        return self.features
+
     def preprocess_images(self, content_image, style_image, content_layers, style_layers,
                           tile_size=256):
         """Performs preprocessing tasks on the input images."""
@@ -186,17 +204,17 @@ class CaffeModel:
             if layer in content_layers or layer in style_layers:
                 layers.append(layer)
 
-        # Prepare feature maps from content image
-        self.set_image(content_image)
-        self.features = self.eval_features(layers, content_layers, tile_size)
-
         # Prepare Gram matrices from style image
         if self.grams is None:
             self.grams = {}
             self.set_image(style_image)
-            feats = self.eval_features(layers, style_layers, tile_size)
+            feats = self.prepare_features(layers, style_layers, tile_size)
             for layer in sorted(feats):
                 self.grams[layer] = gram_matrix(feats[layer])
+
+        # Prepare feature maps from content image
+        self.set_image(content_image)
+        self.prepare_features(layers, content_layers, tile_size)
 
         return layers
 
@@ -261,14 +279,14 @@ class CaffeModel:
 
         return grad
 
-    def roll(self, xy):
+    def roll(self, xy, jitter_scale=32):
         """Rolls image and feature maps."""
+        xy = xy * jitter_scale
         for layer, feat in self.features.items():
             scale, _ = self.layer_info(layer)
-            assert scale <= 8
-            x, y = xy * 8 // scale
+            x, y = xy // scale
             self.features[layer] = np.roll(np.roll(feat, x, 2), y, 1)
-        x, y = xy * 8
+        x, y = xy
         self.img[:] = np.roll(np.roll(self.img, x, 2), y, 1)
 
     def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
@@ -294,10 +312,13 @@ class CaffeModel:
         print('tv loss', file=log, flush=True)
 
         for step in range(1, iterations+1):
-            xy = np.int32(np.random.uniform(0, jitter, size=2)) - jitter // 2
-            self.roll(xy)
-            optimizer.roll(xy*8)  # FIXME: remove dependency on scale=8
+            # Forward jitter
+            jitter_scale, _ = self.layer_info([l for l in layers if l in content_layers][0])
+            xy = (np.int32(np.random.uniform(0, jitter, size=2)) - jitter) // jitter_scale // 2
+            self.roll(xy, jitter_scale=jitter_scale)
+            optimizer.roll(xy * jitter_scale)
 
+            # Compute style+content gradient
             old_params = optimizer.apply_nesterov_step()
             grad = self.eval_sc_grad(layers, content_layers, style_layers,
                                      content_weight, style_weight, tile_size=tile_size)
@@ -305,6 +326,8 @@ class CaffeModel:
             # Compute total variation gradient
             tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
             tv_grad = convolve(self.img, tv_kernel, mode='wrap')/255
+
+            # Selectively blur edges more to obscure jitter and tile seams
             tv_mask = np.ones_like(tv_grad)
             tv_mask[:, :2, :] = 5
             tv_mask[:, -2:, :] = 5
@@ -317,8 +340,10 @@ class CaffeModel:
 
             # In-place gradient descent update
             update_size = np.mean(np.abs(optimizer.update(grad, old_params)))
-            self.roll(-xy)
-            optimizer.roll(-xy*8)
+
+            # Backward jitter
+            self.roll(-xy, jitter_scale=jitter_scale)
+            optimizer.roll(-xy * jitter_scale)
 
             # Apply constraints
             mean = self.mean.squeeze()
@@ -463,7 +488,7 @@ def parse_args():
     parser.add_argument(
         '--step-size', '-st', type=ffloat, default=2, help='the step size (iteration strength)')
     parser.add_argument(
-        '--size', '-s', nargs='+', type=int, default=[256], help='the output size(s)')
+        '--size', '-s', nargs='+', type=int, default=[250], help='the output size(s)')
     parser.add_argument(
         '--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor')
     parser.add_argument(
@@ -501,11 +526,11 @@ def parse_args():
         '--gpu', type=int, default=0, help='gpu number to use (-1 for cpu)'
     )
     parser.add_argument(
-        '--jitter', type=int, default=16,
-        help='Amount to roll the image each iteration to obscure tile seams.'
+        '--jitter', type=int, default=128,
+        help='the random translation size applied the image each iteration to obscure tile seams'
     )
     parser.add_argument(
-        '--tile-size', type=int, default=256, help='The maximum rendering tile size.'
+        '--tile-size', type=int, default=256, help='the maximum rendering tile size'
     )
     return parser.parse_args()
 
