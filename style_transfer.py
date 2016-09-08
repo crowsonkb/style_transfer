@@ -22,6 +22,8 @@ import numpy as np
 from PIL import Image
 from scipy.ndimage import convolve, convolve1d
 
+ARGS = None
+
 # Spawn new Python interpreters - forking mixes badly with caffe
 CTX = mp.get_context('spawn')
 
@@ -421,17 +423,15 @@ class CaffeModel:
         x, y = xy
         self.img[:] = np.roll(np.roll(self.img, x, 2), y, 1)
 
-    def transfer(self, iterations, content_image, style_image, content_layers, style_layers,
-                 step_size=1, content_weight=1, style_weight=1, tv_weight=1, callback=None,
-                 initial_image=None, tile_size=512, devices=(-1,)):
+    def transfer(self, iterations, content_image, style_image, initial_image, callback=None):
         """Performs style transfer from style_image to content_image."""
-        content_weight /= max(len(content_layers), 1)
-        style_weight /= max(len(style_layers), 1)
+        content_weight = ARGS.content_weight / max(len(ARGS.content_layers), 1)
+        style_weight = 1 / max(len(ARGS.style_layers), 1)
 
         if self.pool is None:
-            self.pool = TileWorkerPool(self, devices)
-        layers = self.preprocess_images(self.pool, content_image, style_image, content_layers,
-                                        style_layers, tile_size)
+            self.pool = TileWorkerPool(self, ARGS.devices)
+        layers = self.preprocess_images(self.pool, content_image, style_image, ARGS.content_layers,
+                                        ARGS.style_layers, ARGS.tile_size)
         self.pool.set_features_and_grams(self.features, self.grams)
 
         # Initialize the model with a noise image
@@ -442,24 +442,25 @@ class CaffeModel:
         else:
             self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
 
-        optimizer = Optimizer(self.img, step_size=step_size, max_step=iterations+1)
+        optimizer = Optimizer(self.img, step_size=ARGS.step_size, max_step=iterations+1)
         log = open('log.csv', 'w')
         print('tv loss', file=log, flush=True)
 
         for step in range(1, iterations+1):
             # Forward jitter
-            jitter_scale, _ = self.layer_info([l for l in layers if l in content_layers][0])
+            jitter_scale, _ = self.layer_info([l for l in layers if l in ARGS.content_layers][0])
             xy = np.array((0, 0))
             img_size = np.array(self.img.shape[-2:])
-            if max(*img_size) > tile_size:
+            if max(*img_size) > ARGS.tile_size:
                 xy = np.int32(np.random.uniform(-0.5, 0.5, size=2) * img_size) // jitter_scale
             self.roll(xy, jitter_scale=jitter_scale)
             optimizer.roll(xy * jitter_scale)
 
             # Compute style+content gradient
             old_params = optimizer.apply_nesterov_step()
-            grad = self.eval_sc_grad(self.pool, xy * jitter_scale, content_layers, style_layers,
-                                     content_weight, style_weight, tile_size=tile_size)
+            grad = self.eval_sc_grad(self.pool, xy * jitter_scale, ARGS.content_layers,
+                                     ARGS.style_layers, content_weight, style_weight,
+                                     tile_size=ARGS.tile_size)
 
             # Compute total variation gradient
             tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
@@ -474,7 +475,7 @@ class CaffeModel:
             tv_grad *= tv_mask
 
             # Compute a weighted sum of normalized gradients
-            grad = normalize(grad) + tv_weight*tv_grad
+            grad = normalize(grad) + ARGS.tv_weight*tv_grad
 
             # In-place gradient descent update
             update_size = np.mean(np.abs(optimizer.update(grad, old_params)))
@@ -503,7 +504,7 @@ class CaffeModel:
 
         return self.get_image()
 
-    def transfer_multiscale(self, sizes, iterations, content_image, style_image, *args, **kwargs):
+    def transfer_multiscale(self, sizes, iterations, content_image, style_image, **kwargs):
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
         for size in sizes:
@@ -511,8 +512,8 @@ class CaffeModel:
             # style_scaled = resize_to_fit(style_image, size)
             if output_image is not None:
                 output_image = output_image.resize(content_scaled.size, Image.BICUBIC)
-            output_image = self.transfer(iterations, content_scaled, style_image,
-                                         initial_image=output_image, *args, **kwargs)
+            output_image = self.transfer(iterations, content_scaled, style_image, output_image,
+                                         **kwargs)
         return output_image
 
 
@@ -670,54 +671,52 @@ def parse_args():
         help='device numbers to use (-1 for cpu)')
     parser.add_argument(
         '--tile-size', type=int, default=512, help='the maximum rendering tile size')
-    return parser.parse_args()
+    global ARGS  # pylint: disable=global-statement
+    ARGS = parser.parse_args()
 
 
 def main():
     """CLI interface for style transfer."""
-    args = parse_args()
+    parse_args()
 
     os.environ['GLOG_minloglevel'] = '2'
     import caffe
     caffe.set_mode_cpu()
 
-    model = CaffeModel(args.model, args.weights, args.mean)
-    if args.list_layers:
+    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean)
+    if ARGS.list_layers:
         print('Layers:')
         for layer in model.layers():
             print('    %s, size=%s' % (layer, model.data[layer].shape))
         sys.exit(0)
 
-    sizes = sorted(args.size)
-    content_image = Image.open(args.content_image).convert('RGB')
-    style_image = Image.open(args.style_image).convert('RGB')
-    style_image = resize_to_fit(style_image, sizes[-1]*args.style_scale)
+    sizes = sorted(ARGS.size)
+    content_image = Image.open(ARGS.content_image).convert('RGB')
+    style_image = Image.open(ARGS.style_image).convert('RGB')
+    style_image = resize_to_fit(style_image, sizes[-1]*ARGS.style_scale)
     print('Resized style image to %dx%d.' % style_image.size)
 
-    server_address = ('', args.port)
-    url = 'http://127.0.0.1:%d/' % args.port
+    server_address = ('', ARGS.port)
+    url = 'http://127.0.0.1:%d/' % ARGS.port
     server = ProgressServer(server_address, ProgressHandler)
     server.model = model
-    server.hidpi = args.hidpi
+    server.hidpi = ARGS.hidpi
     progress_args = {}
-    if not args.no_browser:
+    if not ARGS.no_browser:
         progress_args['url'] = url
     server.progress = Progress(
-        model, steps=args.iterations*len(sizes), save_every=args.save_every, **progress_args)
+        model, steps=ARGS.iterations*len(sizes), save_every=ARGS.save_every, **progress_args)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print('\nWatch the progress at: %s\n' % url)
 
     np.random.seed(0)
     try:
-        model.transfer_multiscale(
-            sizes, args.iterations, content_image, style_image, args.content_layers,
-            args.style_layers, step_size=args.step_size, content_weight=args.content_weight,
-            tv_weight=args.tv_weight, callback=server.progress, tile_size=args.tile_size,
-            devices=args.devices)
+        model.transfer_multiscale(sizes, ARGS.iterations, content_image, style_image,
+                                  callback=server.progress)
     except KeyboardInterrupt:
         pass
-    print('Saving output as %s.' % args.output_image)
-    model.current_output.save(args.output_image)
+    print('Saving output as %s.' % ARGS.output_image)
+    model.current_output.save(ARGS.output_image)
 
 if __name__ == '__main__':
     main()
