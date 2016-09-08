@@ -712,9 +712,9 @@ def main():
             tv_weight=args.tv_weight, callback=server.progress, tile_size=args.tile_size,
             devices=args.devices)
     except KeyboardInterrupt:
-        output_image = model.get_image()
+        pass
     print('Saving output as %s.' % args.output_image)
-    output_image.save(args.output_image)
+    model.current_output.save(args.output_image)
 
 if __name__ == '__main__':
     main()
