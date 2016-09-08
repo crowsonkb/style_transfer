@@ -220,6 +220,7 @@ class CaffeModel:
         self.grams = None
         self.current_output = None
         self.img = None
+        self.pool = None
 
     def get_image(self):
         """Gets the current model input as a PIL image."""
@@ -427,10 +428,11 @@ class CaffeModel:
         content_weight /= max(len(content_layers), 1)
         style_weight /= max(len(style_layers), 1)
 
-        pool = TileWorkerPool(self, devices)
-        layers = self.preprocess_images(pool, content_image, style_image, content_layers,
+        if self.pool is None:
+            self.pool = TileWorkerPool(self, devices)
+        layers = self.preprocess_images(self.pool, content_image, style_image, content_layers,
                                         style_layers, tile_size)
-        pool.set_features_and_grams(self.features, self.grams)
+        self.pool.set_features_and_grams(self.features, self.grams)
 
         # Initialize the model with a noise image
         w, h = content_image.size
@@ -456,7 +458,7 @@ class CaffeModel:
 
             # Compute style+content gradient
             old_params = optimizer.apply_nesterov_step()
-            grad = self.eval_sc_grad(pool, xy * jitter_scale, content_layers, style_layers,
+            grad = self.eval_sc_grad(self.pool, xy * jitter_scale, content_layers, style_layers,
                                      content_weight, style_weight, tile_size=tile_size)
 
             # Compute total variation gradient
