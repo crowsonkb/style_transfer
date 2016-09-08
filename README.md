@@ -2,7 +2,7 @@
 
 Data-parallel neural style transfer using Caffe. Implements http://arxiv.org/abs/1508.06576.
 
-Requirements:
+Dependencies:
 - Python 3.5
 - [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 3.5
 - Python packages numpy, Pillow, posix-ipc, scipy
@@ -20,3 +20,55 @@ Requirements:
 The obligatory Golden Gate Bridge + Starry Night style transfer ([big version](https://s3-us-west-2.amazonaws.com/cb0a-46ef-cc86-8dda/style_transfer_examples/golden_gate_sn.jpg)):
 
 <img src="examples/golden_gate_sn.jpg" width="512" height="384">
+
+## Installation
+
+### Building pycaffe for Python 3.5
+
+On OS X, you can install Python 3 and Boost.Python using [Homebrew](http://brew.sh):
+
+```
+brew install python3
+brew install boost-python --with-python3
+```
+
+Then insert these lines into Caffe's `Makefile.config` to build against the Homebrew-provided Python 3.5:
+
+```
+PYTHON_DIR := /usr/local/opt/python3/Frameworks/Python.framework/Versions/3.5
+PYTHON_LIBRARIES := boost_python3 python3.5m
+PYTHON_INCLUDE := $(PYTHON_DIR)/include/python3.5m \
+	/usr/local/lib/python3.5/site-packages/numpy/core/include
+PYTHON_LIB := $(PYTHON_DIR)/lib
+```
+
+`make pycaffe` ought to compile the Python 3 bindings now.
+
+### Installing style_transfer's Python dependencies
+
+First, install `style_transfer`'s direct dependencies:
+
+```
+pip3 install -Ur requirements.txt
+```
+
+Then, if you haven't already, Caffe's:
+
+```
+pip3 install -U scikit-image matplotlib
+```
+
+Besides those, Caffe depends on [protobuf](https://github.com/google/protobuf), and versions of protobuf older than 3.0 do not work with Python 3&mdash;so go to the [releases page](https://github.com/google/protobuf/releases) and download the Python runtime library (example given is for version 3.0.2):
+
+```
+unzip protobuf-python-3.0.2.zip
+cd protobuf-3.0.2/python
+python3 setup.py bdist_wheel --cpp_implementation
+pip3 install -U dist/*.whl
+```
+
+You should be able to run `style_transfer` now by specifying the path to Caffe's Python bindings in the `PYTHONPATH`:
+
+```
+PYTHONPATH="/path/to/caffe/python" python3 style_transfer.py <content_image> <style_image>
+```
