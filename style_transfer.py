@@ -422,7 +422,7 @@ class CaffeModel:
         x, y = xy
         self.img[:] = np.roll(np.roll(self.img, x, 2), y, 1)
 
-    def transfer(self, iterations, content_image, style_image, initial_image, callback=None):
+    def transfer(self, iterations, content_image, style_image, initial_image=None, callback=None):
         """Performs style transfer from style_image to content_image."""
         content_weight = ARGS.content_weight / max(len(ARGS.content_layers), 1)
         style_weight = 1 / max(len(ARGS.style_layers), 1)
@@ -435,7 +435,7 @@ class CaffeModel:
 
         # Initialize the model with a noise image
         w, h = content_image.size
-        if initial_image is not None:
+        if initial_image:
             assert initial_image.size == (w, h), 'Initial image size must match content image'
             self.set_image(initial_image)
         else:
@@ -503,16 +503,20 @@ class CaffeModel:
 
         return self.get_image()
 
-    def transfer_multiscale(self, sizes, iterations, content_image, style_image, **kwargs):
+    def transfer_multiscale(self, sizes, iterations, content_image, style_image, initial_image,
+                            **kwargs):
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
         for size in sizes:
             content_scaled = resize_to_fit(content_image, size)
             style_scaled = resize_to_fit(style_image, round(size * ARGS.style_scale))
-            if output_image is not None:
-                output_image = output_image.resize(content_scaled.size, Image.BICUBIC)
-            output_image = self.transfer(iterations, content_scaled, style_scaled, output_image,
-                                         **kwargs)
+            if output_image:
+                initial_image = output_image.resize(content_scaled.size, Image.BICUBIC)
+            else:
+                if initial_image:
+                    initial_image = initial_image.resize(content_scaled.size, Image.BICUBIC)
+            output_image = self.transfer(iterations, content_scaled, style_scaled,
+                                         initial_image=initial_image, **kwargs)
         return output_image
 
 
@@ -625,6 +629,7 @@ def parse_args():
     parser.add_argument('content_image', help='the content image')
     parser.add_argument('style_image', help='the style image')
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
+    parser.add_argument('--init', help='the initial image')
     parser.add_argument(
         '--iterations', '-i', type=int, default=200, help='the number of iterations')
     parser.add_argument(
@@ -692,6 +697,9 @@ def main():
     sizes = sorted(ARGS.size)
     content_image = Image.open(ARGS.content_image).convert('RGB')
     style_image = Image.open(ARGS.style_image).convert('RGB')
+    initial_image = None
+    if ARGS.init:
+        initial_image = Image.open(ARGS.init).convert('RGB')
 
     server_address = ('', ARGS.port)
     url = 'http://127.0.0.1:%d/' % ARGS.port
@@ -709,7 +717,7 @@ def main():
     np.random.seed(0)
     try:
         model.transfer_multiscale(sizes, ARGS.iterations, content_image, style_image,
-                                  callback=server.progress)
+                                  initial_image, callback=server.progress)
     except KeyboardInterrupt:
         pass
     print('Saving output as %s.' % ARGS.output_image)
