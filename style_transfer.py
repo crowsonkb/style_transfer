@@ -205,7 +205,7 @@ class TileWorkerPool:
         """Propagates feature maps and Gram matrices to all TileWorkers."""
         for worker in self.workers:
             worker.fg_q.put((features, grams))
-            time.sleep(1)
+            time.sleep(0.1)
 
 
 class CaffeModel:
@@ -372,7 +372,7 @@ class CaffeModel:
                 current_gram = gram_matrix(self.data[layer])
                 n, mh, mw = self.data[layer].shape
                 feat = self.data[layer].reshape((n, mh * mw))
-                s_grad = (current_gram - self.grams[layer]).T @ feat
+                s_grad = (current_gram - self.grams[layer]) @ feat
                 s_grad = s_grad.reshape((n, mh, mw))
                 self.diff[layer] += normalize(s_grad)*style_weight
                 # style_loss += 0.5 * np.sum((current_gram - self.grams[layer])**2)
