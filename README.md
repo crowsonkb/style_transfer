@@ -7,7 +7,7 @@ Requirements:
 - [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 3.5
 - Python packages numpy, Pillow, posix_ipc, scipy
 
-It will run faster if numpy is compiled to use [MKL](https://software.intel.com/en-us/intel-mkl). If you are running Caffe on the CPU, it will also be faster if compiled with MKL.
+`style_transfer` will run faster if numpy is compiled to use [MKL](https://software.intel.com/en-us/intel-mkl). If you are running Caffe on the CPU, it will also be faster if compiled with MKL. `style_transfer` uses one worker process per GPU, so the optimal value for `MKL_NUM_THREADS` is the number of real CPU cores divided by the number of GPUs.
 
 ## Features
 
