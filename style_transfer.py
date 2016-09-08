@@ -219,17 +219,24 @@ class TileWorkerPool:
     """A collection of TileWorkers."""
     def __init__(self, model, devices):
         self.workers = []
-        self.req_q = CTX.Queue()
+        self.next_worker = 0
         self.resp_q = CTX.Queue()
         self.is_healthy = True
         for device in devices:
             self.workers.append(
-                TileWorker(self.req_q, self.resp_q, CTX.Queue(), model, device))
+                TileWorker(CTX.Queue(), self.resp_q, CTX.Queue(), model, device))
 
     def __del__(self):
         self.is_healthy = False
         for worker in self.workers:
             worker.__del__()
+
+    def request(self, req):
+        self.workers[self.next_worker].req_q.put(req)
+        self.next_worker = (self.next_worker + 1) % len(self.workers)
+
+    def reset_next_worker(self):
+        self.next_worker = 0
 
     def ensure_healthy(self):
         """Checks for abnormal pool process termination."""
@@ -328,7 +335,8 @@ class CaffeModel:
                     end[1] = img_size[1]
                 tile = self.img[:, start[0]:end[0], start[1]:end[1]]
                 pool.ensure_healthy()
-                pool.req_q.put(FeatureMapRequest(start, SharedNDArray.copy(tile), layers))
+                pool.request(FeatureMapRequest(start, SharedNDArray.copy(tile), layers))
+        pool.reset_next_worker()
         for _ in range(np.prod(ntiles)):
             start, feats_tile = pool.resp_q.get()
             for layer, feat in feats_tile.items():
@@ -444,9 +452,10 @@ class CaffeModel:
                     end[1] = img_size[1]
                 tile = self.img[:, start[0]:end[0], start[1]:end[1]]
                 pool.ensure_healthy()
-                pool.req_q.put(
+                pool.request(
                     SCGradRequest((start, end), SharedNDArray.copy(tile), roll, start,
                                   content_layers, style_layers, content_weight, style_weight))
+        pool.reset_next_worker()
         for _ in range(np.prod(ntiles)):
             (start, end), grad_tile = pool.resp_q.get()
             grad[:, start[0]:end[0], start[1]:end[1]] = grad_tile.array
