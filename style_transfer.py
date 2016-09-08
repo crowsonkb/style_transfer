@@ -650,7 +650,7 @@ def parse_args():
     parser.add_argument(
         '--no-browser', action='store_true', help='don\'t open a web browser')
     parser.add_argument(
-        '--hidpi', '-2', action='store_true', help='display the image at 2x scale in the browser')
+        '--hidpi', action='store_true', help='display the image at 2x scale in the browser')
     parser.add_argument(
         '--model', default='VGG_ILSVRC_19_layers_deploy.prototxt',
         help='the Caffe deploy.prototxt for the model to use')
