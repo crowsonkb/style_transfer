@@ -73,7 +73,8 @@ class Optimizer:
         """Get the current step size."""
         if self.max_step:
             # gamma = decay_by**(1/every)
-            gamma = 0.05**(1/self.max_step)
+            assert ARGS.decay_to > 0, 'Exponential decay does not support 0 or negative decay_to'
+            gamma = ARGS.decay_to**(1/self.max_step)
             return self.step_size * gamma**self.step
         return self.step_size
 
@@ -629,7 +630,7 @@ def parse_args():
     parser.add_argument('content_image', help='the content image')
     parser.add_argument('style_image', help='the style image')
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
-    parser.add_argument('--init', help='the initial image')
+    parser.add_argument('--init', metavar='IMAGE', help='the initial image')
     parser.add_argument(
         '--iterations', '-i', type=int, default=200, help='the number of iterations')
     parser.add_argument(
@@ -675,6 +676,9 @@ def parse_args():
         help='device numbers to use (-1 for cpu)')
     parser.add_argument(
         '--tile-size', type=int, default=512, help='the maximum rendering tile size')
+    parser.add_argument(
+        '--decay-to', metavar='N', type=float, default=0.05,
+        help='decay step size by a factor of N by the end of a scale')
     global ARGS  # pylint: disable=global-statement
     ARGS = parser.parse_args()
 
