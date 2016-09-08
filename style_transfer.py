@@ -452,7 +452,7 @@ class CaffeModel:
             xy = np.array((0, 0))
             img_size = np.array(self.img.shape[-2:])
             if max(*img_size) > tile_size:
-                xy = np.int32(np.random.uniform(size=2) * img_size) // jitter_scale // 2
+                xy = np.int32(np.random.uniform(-0.5, 0.5, size=2) * img_size) // jitter_scale
             self.roll(xy, jitter_scale=jitter_scale)
             optimizer.roll(xy * jitter_scale)
 
