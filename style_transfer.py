@@ -9,6 +9,7 @@ from collections import namedtuple
 from fractions import Fraction
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import io
+import math
 import mmap
 import multiprocessing as mp
 import os
@@ -739,6 +740,8 @@ def main():
     os.environ['GLOG_minloglevel'] = '2'
     import caffe
     caffe.set_mode_cpu()
+
+    os.environ['MKL_NUM_THREADS'] = str(math.ceil(os.cpu_count() / len(ARGS.devices)))
 
     model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean)
     if ARGS.list_layers:
