@@ -284,7 +284,6 @@ class CaffeModel:
         self.grams = None
         self.current_output = None
         self.img = None
-        self.pool = None
 
     def get_image(self):
         """Gets the current model input as a PIL image."""
@@ -487,16 +486,15 @@ class CaffeModel:
         x, y = xy
         self.img[:] = np.roll(np.roll(self.img, x, 2), y, 1)
 
-    def transfer(self, iterations, content_image, style_image, initial_image=None, callback=None):
+    def transfer(self, pool, iterations, content_image, style_image, initial_image=None,
+                 callback=None):
         """Performs style transfer from style_image to content_image."""
         content_weight = ARGS.content_weight / max(len(ARGS.content_layers), 1)
         style_weight = 1 / max(len(ARGS.style_layers), 1)
 
-        if self.pool is None:
-            self.pool = TileWorkerPool(self, ARGS.devices)
-        layers = self.preprocess_images(self.pool, content_image, style_image, ARGS.content_layers,
+        layers = self.preprocess_images(pool, content_image, style_image, ARGS.content_layers,
                                         ARGS.style_layers, ARGS.tile_size)
-        self.pool.set_features_and_grams(self.features, self.grams)
+        pool.set_features_and_grams(self.features, self.grams)
 
         # Initialize the model with a noise image
         w, h = content_image.size
@@ -522,7 +520,7 @@ class CaffeModel:
 
             # Compute style+content gradient
             old_params = optimizer.apply_nesterov_step()
-            grad = self.eval_sc_grad(self.pool, xy * jitter_scale, ARGS.content_layers,
+            grad = self.eval_sc_grad(pool, xy * jitter_scale, ARGS.content_layers,
                                      ARGS.style_layers, content_weight, style_weight,
                                      tile_size=ARGS.tile_size)
 
@@ -572,6 +570,7 @@ class CaffeModel:
                             **kwargs):
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
+        pool = TileWorkerPool(self, ARGS.devices)
         for size in sizes:
             content_scaled = resize_to_fit(content_image, size)
             style_scaled = resize_to_fit(style_image, round(size * ARGS.style_scale))
@@ -580,7 +579,7 @@ class CaffeModel:
             else:
                 if initial_image:
                     initial_image = initial_image.resize(content_scaled.size, Image.BICUBIC)
-            output_image = self.transfer(iterations, content_scaled, style_scaled,
+            output_image = self.transfer(pool, iterations, content_scaled, style_scaled,
                                          initial_image=initial_image, **kwargs)
         return output_image
 
