@@ -754,8 +754,6 @@ def main():
     import caffe
     caffe.set_mode_cpu()
 
-    os.environ['MKL_NUM_THREADS'] = str(math.ceil(os.cpu_count() / len(ARGS.devices)))
-
     model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean)
     if ARGS.list_layers:
         print('Layers:')
