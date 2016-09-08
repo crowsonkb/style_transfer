@@ -332,12 +332,11 @@ class CaffeModel:
 
         # Prepare Gram matrices from style image
         print('Preprocessing the style image...')
-        if self.grams is None:
-            self.grams = {}
-            self.set_image(style_image)
-            feats = self.prepare_features(pool, style_layers, tile_size)
-            for layer in feats:
-                self.grams[layer] = gram_matrix(feats[layer])
+        self.grams = {}
+        self.set_image(style_image)
+        feats = self.prepare_features(pool, style_layers, tile_size)
+        for layer in feats:
+            self.grams[layer] = gram_matrix(feats[layer])
 
         # Prepare feature maps from content image
         print('Preprocessing the content image...')
@@ -509,10 +508,10 @@ class CaffeModel:
         output_image = None
         for size in sizes:
             content_scaled = resize_to_fit(content_image, size)
-            # style_scaled = resize_to_fit(style_image, size)
+            style_scaled = resize_to_fit(style_image, round(size * ARGS.style_scale))
             if output_image is not None:
                 output_image = output_image.resize(content_scaled.size, Image.BICUBIC)
-            output_image = self.transfer(iterations, content_scaled, style_image, output_image,
+            output_image = self.transfer(iterations, content_scaled, style_scaled, output_image,
                                          **kwargs)
         return output_image
 
@@ -693,8 +692,6 @@ def main():
     sizes = sorted(ARGS.size)
     content_image = Image.open(ARGS.content_image).convert('RGB')
     style_image = Image.open(ARGS.style_image).convert('RGB')
-    style_image = resize_to_fit(style_image, sizes[-1]*ARGS.style_scale)
-    print('Resized style image to %dx%d.' % style_image.size)
 
     server_address = ('', ARGS.port)
     url = 'http://127.0.0.1:%d/' % ARGS.port
