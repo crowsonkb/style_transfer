@@ -9,6 +9,7 @@ from collections import namedtuple
 from fractions import Fraction
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import io
+import mmap
 import multiprocessing as mp
 import os
 import queue
@@ -20,6 +21,7 @@ import webbrowser
 
 import numpy as np
 from PIL import Image
+import posix_ipc
 from scipy.ndimage import convolve, convolve1d
 
 ARGS = None
@@ -42,6 +44,40 @@ def gram_matrix(feat):
     feat = feat.reshape((n, mh * mw))
     gram = feat @ feat.T / np.float32(feat.size)
     return gram
+
+
+# pylint: disable=no-member
+class SharedNDArray:
+    def __init__(self, shape, dtype=np.float64, name=None):
+        size = int(np.prod(shape)) * np.dtype(dtype).itemsize
+        if name:
+            self._shm = posix_ipc.SharedMemory(name)
+        else:
+            self._shm = posix_ipc.SharedMemory(None, posix_ipc.O_CREX, size=size)
+        buf = mmap.mmap(self._shm.fd, size)
+        self.array = np.ndarray(shape, dtype, buf)
+
+    @classmethod
+    def copy(cls, arr):
+        new_shm = cls.zeros_like(arr)
+        new_shm.array[:] = arr
+        return new_shm
+
+    @classmethod
+    def zeros_like(cls, arr):
+        return cls(arr.shape, arr.dtype)
+
+    def unlink(self):
+        self._shm.unlink()
+
+    def __del__(self):
+        self._shm.close_fd()
+
+    def __getstate__(self):
+        return self.array.shape, self.array.dtype, self._shm.name
+
+    def __setstate__(self, state):
+        self.__init__(*state)
 
 
 class LayerIndexer:
@@ -154,8 +190,10 @@ class TileWorker:
                 for layer in reversed(self.model.layers()):
                     if layer in req.layers:
                         layers.append(layer)
-                features = self.model.eval_features_tile(req.img, layers)
-                resp = FeatureMapResponse(req.resp, features)
+                features = self.model.eval_features_tile(req.img.array, layers)
+                req.img.unlink()
+                features_shm = {layer: SharedNDArray.copy(features[layer]) for layer in features}
+                resp = FeatureMapResponse(req.resp, features_shm)
                 self.resp_q.put(resp)
 
             if isinstance(req, SCGradRequest):
@@ -164,10 +202,11 @@ class TileWorker:
                         layers.append(layer)
                 self.model.roll(req.roll, jitter_scale=1)
                 grad = self.model.eval_sc_grad_tile(
-                    req.img, req.start, layers, req.content_layers, req.style_layers,
+                    req.img.array, req.start, layers, req.content_layers, req.style_layers,
                     req.content_weight, req.style_weight)
+                req.img.unlink()
                 self.model.roll(-req.roll, jitter_scale=1)
-                resp = SCGradResponse(req.resp, grad)
+                resp = SCGradResponse(req.resp, SharedNDArray.copy(grad))
                 self.resp_q.put(resp)
 
 
@@ -264,7 +303,7 @@ class CaffeModel:
         self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
         self.data['data'] = img
         self.net.forward(end=layers[0])
-        return {layer: self.data[layer].copy() for layer in layers}
+        return {layer: self.data[layer] for layer in layers}
 
     def eval_features_once(self, pool, layers, tile_size=512):
         """Computes the set of feature maps for an image."""
@@ -289,14 +328,15 @@ class CaffeModel:
                     end[1] = img_size[1]
                 tile = self.img[:, start[0]:end[0], start[1]:end[1]]
                 pool.ensure_healthy()
-                pool.req_q.put(FeatureMapRequest(start, tile, layers))
+                pool.req_q.put(FeatureMapRequest(start, SharedNDArray.copy(tile), layers))
         for _ in range(np.prod(ntiles)):
             start, feats_tile = pool.resp_q.get()
             for layer, feat in feats_tile.items():
                 scale, _ = self.layer_info(layer)
                 start_f = start // scale
-                end_f = start_f + np.array(feat.shape[-2:])
-                features[layer][:, start_f[0]:end_f[0], start_f[1]:end_f[1]] = feat
+                end_f = start_f + np.array(feat.array.shape[-2:])
+                features[layer][:, start_f[0]:end_f[0], start_f[1]:end_f[1]] = feat.array
+                feat.unlink()
 
         return features
 
@@ -405,11 +445,11 @@ class CaffeModel:
                 tile = self.img[:, start[0]:end[0], start[1]:end[1]]
                 pool.ensure_healthy()
                 pool.req_q.put(
-                    SCGradRequest((start, end), tile, roll, start, content_layers, style_layers,
-                                  content_weight, style_weight))
+                    SCGradRequest((start, end), SharedNDArray.copy(tile), roll, start,
+                                  content_layers, style_layers, content_weight, style_weight))
         for _ in range(np.prod(ntiles)):
             (start, end), grad_tile = pool.resp_q.get()
-            grad[:, start[0]:end[0], start[1]:end[1]] = grad_tile
+            grad[:, start[0]:end[0], start[1]:end[1]] = grad_tile.array
 
         return grad
 

@@ -5,7 +5,7 @@ Data-parallel neural style transfer using Caffe. Implements http://arxiv.org/abs
 Requirements:
 - Python 3.5
 - [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 3.5
-- Python packages numpy, Pillow, scipy
+- Python packages numpy, Pillow, posix_ipc, scipy
 
 It will run faster if numpy is compiled to use [MKL](https://software.intel.com/en-us/intel-mkl). If you are running Caffe on the CPU, it will also be faster if compiled with MKL.
 
