@@ -13,7 +13,6 @@ import math
 import mmap
 import multiprocessing as mp
 import os
-import queue
 from socketserver import ThreadingMixIn
 import sys
 import threading
@@ -150,14 +149,14 @@ FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
 SCGradRequest = namedtuple(
     'SCGradRequest', 'resp img roll start content_layers style_layers content_weight style_weight')
 SCGradResponse = namedtuple('SCGradResponse', 'resp grad')
+SetFeaturesAndGrams = namedtuple('SetFeaturesAndGrams', 'features grams')
 
 
 class TileWorker:
     """Computes feature maps and gradients on the specified device in a separate process."""
-    def __init__(self, req_q, resp_q, fg_q, model, device=-1):
+    def __init__(self, req_q, resp_q, model, device=-1):
         self.req_q = req_q
         self.resp_q = resp_q
-        self.fg_q = fg_q
         self.model = None
         self.model_info = (model.deploy, model.weights, model.mean, model.bgr)
         self.device = device
@@ -190,11 +189,6 @@ class TileWorker:
             req = self.req_q.get()
             layers = []
 
-            try:
-                self.model.features, self.model.grams = self.fg_q.get_nowait()
-            except queue.Empty:
-                pass
-
             if isinstance(req, FeatureMapRequest):
                 for layer in reversed(self.model.layers()):
                     if layer in req.layers:
@@ -202,8 +196,7 @@ class TileWorker:
                 features = self.model.eval_features_tile(req.img.array, layers)
                 req.img.unlink()
                 features_shm = {layer: SharedNDArray.copy(features[layer]) for layer in features}
-                resp = FeatureMapResponse(req.resp, features_shm)
-                self.resp_q.put(resp)
+                self.resp_q.put(FeatureMapResponse(req.resp, features_shm))
 
             if isinstance(req, SCGradRequest):
                 for layer in reversed(self.model.layers()):
@@ -215,8 +208,14 @@ class TileWorker:
                     req.content_weight, req.style_weight)
                 req.img.unlink()
                 self.model.roll(-req.roll, jitter_scale=1)
-                resp = SCGradResponse(req.resp, SharedNDArray.copy(grad))
-                self.resp_q.put(resp)
+                self.resp_q.put(SCGradResponse(req.resp, SharedNDArray.copy(grad)))
+
+            if isinstance(req, SetFeaturesAndGrams):
+                self.model.features = \
+                    {layer: req.features[layer].array.copy() for layer in req.features}
+                self.model.grams = \
+                    {layer: req.grams[layer].array.copy() for layer in req.grams}
+                self.resp_q.put(())
 
 
 class TileWorkerPoolError(Exception):
@@ -233,7 +232,7 @@ class TileWorkerPool:
         self.is_healthy = True
         for device in devices:
             self.workers.append(
-                TileWorker(CTX.Queue(), self.resp_q, CTX.Queue(), model, device))
+                TileWorker(CTX.Queue(), self.resp_q, model, device))
 
     def __del__(self):
         self.is_healthy = False
@@ -261,8 +260,13 @@ class TileWorkerPool:
     def set_features_and_grams(self, features, grams):
         """Propagates feature maps and Gram matrices to all TileWorkers."""
         for worker in self.workers:
-            worker.fg_q.put((features, grams))
-            time.sleep(0.1)
+            features_shm = {layer: SharedNDArray.copy(features[layer]) for layer in features}
+            grams_shm = {layer: SharedNDArray.copy(grams[layer]) for layer in grams}
+            worker.req_q.put(SetFeaturesAndGrams(features_shm, grams_shm))
+        for _ in self.workers:
+            self.resp_q.get()
+        _ = [shm.unlink() for shm in features_shm.values()]
+        _ = [shm.unlink() for shm in grams_shm.values()]
 
 
 class CaffeModel:
