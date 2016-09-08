@@ -707,7 +707,7 @@ def main():
 
     np.random.seed(0)
     try:
-        output_image = model.transfer_multiscale(
+        model.transfer_multiscale(
             sizes, args.iterations, content_image, style_image, args.content_layers,
             args.style_layers, step_size=args.step_size, content_weight=args.content_weight,
             tv_weight=args.tv_weight, callback=server.progress, tile_size=args.tile_size,
