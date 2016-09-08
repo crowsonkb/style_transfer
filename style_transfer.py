@@ -9,7 +9,6 @@ from collections import namedtuple
 from fractions import Fraction
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import io
-import math
 import mmap
 import multiprocessing as mp
 import os
