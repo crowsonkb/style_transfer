@@ -49,6 +49,9 @@ def gram_matrix(feat):
 
 # pylint: disable=no-member
 class SharedNDArray:
+    """Creates an ndarray shared between processes using POSIX shared memory. It can be used to
+    transmit ndarrays between processes quickly. It can be sent over multiprocessing.Pipe and
+    Queue."""
     def __init__(self, shape, dtype=np.float64, name=None):
         size = int(np.prod(shape)) * np.dtype(dtype).itemsize
         if name:
@@ -60,15 +63,20 @@ class SharedNDArray:
 
     @classmethod
     def copy(cls, arr):
+        """Creates a new SharedNDArray that is a copy of the given ndarray."""
         new_shm = cls.zeros_like(arr)
         new_shm.array[:] = arr
         return new_shm
 
     @classmethod
     def zeros_like(cls, arr):
+        """Creates a new zero-filled SharedNDArray with the shape and dtype of the given
+        ndarray."""
         return cls(arr.shape, arr.dtype)
 
     def unlink(self):
+        """Marks the ndarray for deletion. This method should be called once and only once, from
+        one process."""
         self._shm.unlink()
 
     def __del__(self):
@@ -233,10 +241,12 @@ class TileWorkerPool:
             worker.__del__()
 
     def request(self, req):
+        """Enqueues a request."""
         self.workers[self.next_worker].req_q.put(req)
         self.next_worker = (self.next_worker + 1) % len(self.workers)
 
     def reset_next_worker(self):
+        """Sets the worker which will process the next request to worker 0."""
         self.next_worker = 0
 
     def ensure_healthy(self):
