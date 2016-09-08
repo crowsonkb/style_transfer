@@ -202,6 +202,7 @@ class TileWorkerPool:
         """Propagates feature maps and Gram matrices to all TileWorkers."""
         for worker in self.workers:
             worker.fg_q.put((features, grams))
+            time.sleep(1)
 
 
 class CaffeModel:
@@ -674,7 +675,7 @@ def main():
     """CLI interface for style transfer."""
     args = parse_args()
 
-    os.environ['GLOG_minloglevel'] = '3'
+    os.environ['GLOG_minloglevel'] = '2'
     import caffe
     caffe.set_mode_cpu()
 
