@@ -12,6 +12,7 @@ import io
 import mmap
 import multiprocessing as mp
 import os
+import pickle
 from socketserver import ThreadingMixIn
 import sys
 import threading
@@ -144,9 +145,9 @@ class Optimizer:
         self.params -= self.step_size * g1_hat / (np.sqrt(g2_hat) + EPS)
 
         # Polyak-Ruppert averaging
+        weight = (1+self.avg_bias) / (self.step+self.avg_bias)
+        self.p1[:] = (1-weight)*self.p1 + weight*self.params
         if self.averaging:
-            weight = (1+self.avg_bias) / (self.step+self.avg_bias)
-            self.p1[:] = (1-weight)*self.p1 + weight*self.params
             return self.p1
         else:
             return self.params
@@ -169,6 +170,14 @@ class Optimizer:
         self.g1 = resize(self.g1, hw)
         self.g2 = resize(self.g2, hw, Image.NEAREST)
         self.p1 = resize(self.p1, hw)
+
+    def restore_state(self, optimizer):
+        """Given an Optimizer instance, restores internal state from it."""
+        self.params = optimizer.params
+        self.g1 = optimizer.g1
+        self.g2 = optimizer.g2
+        self.p1 = optimizer.p1
+        self.step = optimizer.step
 
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
@@ -600,7 +609,7 @@ class StyleTransfer:
         return self.current_output, self.model.get_image()
 
     def transfer_multiscale(self, sizes, iterations, content_image, style_image, initial_image,
-                            **kwargs):
+                            initial_state=None, **kwargs):
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
         last_iterate = None
@@ -624,15 +633,29 @@ class StyleTransfer:
 
                 # make sure the optimizer's params array shares memory with self.model.img
                 # after preprocess_image is called later
-                params = self.model.img
                 self.optimizer = Optimizer(
-                    params, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
+                    self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
                     averaging_bias=ARGS.averaging_bias)
 
+                if initial_state:
+                    self.optimizer.restore_state(initial_state)
+                    if self.model.img.shape != self.optimizer.params.shape:
+                        initial_image = self.model.get_image(self.optimizer.params)
+                        initial_image = initial_image.resize(content_scaled.size, Image.BICUBIC)
+                        self.model.set_image(initial_image)
+                        self.optimizer.set_params(self.model.img)
+                    self.model.img = self.optimizer.params
+
+            params = self.model.img
             output_image, last_iterate = self.transfer(iterations, params, content_scaled,
                                                        style_scaled, **kwargs)
 
         return output_image
+
+    def save_state(self, filename='out.state'):
+        """Saves the optimizer's internal state to disk."""
+        with open(filename, 'wb') as f:
+            pickle.dump(self.optimizer, f, pickle.HIGHEST_PROTOCOL)
 
 
 class Progress:
@@ -745,6 +768,7 @@ def parse_args():
     parser.add_argument('style_image', help='the style image')
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
     parser.add_argument('--init', metavar='IMAGE', help='the initial image')
+    parser.add_argument('--state', help='a .state file (the initial state)')
     parser.add_argument(
         '--iterations', '-i', type=int, default=300, help='the number of iterations')
     parser.add_argument(
@@ -837,14 +861,22 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print('\nWatch the progress at: %s\n' % url)
 
+    state = None
+    if ARGS.state:
+        state = pickle.load(open(ARGS.state, 'rb'))
+
     np.random.seed(0)
     try:
-        transfer.transfer_multiscale(sizes, ARGS.iterations, content_image, style_image,
-                                     initial_image, callback=server.progress)
+        transfer.transfer_multiscale(
+            sizes, ARGS.iterations, content_image, style_image, initial_image,
+            callback=server.progress, initial_state=state)
     except KeyboardInterrupt:
         pass
     print('Saving output as %s.' % ARGS.output_image)
     transfer.current_output.save(ARGS.output_image)
+    a, _, _ = ARGS.output_image.rpartition('.')
+    print('Saving state as %s.' % (a + '.state'))
+    transfer.save_state(a + '.state')
 
 if __name__ == '__main__':
     main()
