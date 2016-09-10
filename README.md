@@ -14,6 +14,7 @@ Dependencies:
 - The image is divided into tiles which are processed one at a time (with one GPU). Since the tiles can be sized so as to fit into GPU memory, this allows arbitrary size images to be processed&mdash;including print size. (ex: `--size 2048 --tile-size 512`)
 - Images can be processed at multiple scales for speed. For instance, `--size 512 1024 2048 -i 100` will run 100 iterations (the default is 200) at 512x512, then 100 at 1024x1024, then 100 more at 2048x2048.
 - Multi-GPU support (ex: `--devices 0 1 2 3`). Four GPUs, for instance, can process four tiles at a time.
+- Uses [Polyak-Ruppert averaging](https://www.researchgate.net/profile/Boris_Polyak2/publication/236736831_Acceleration_of_stochastic_approximation_by_averaging_SIAM_J_Control_Optim_30_838-855/links/0f31753227e964baab000000.pdf) over successive iterations to reduce image noise.
 
 ## Example
 
