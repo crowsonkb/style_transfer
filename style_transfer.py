@@ -105,7 +105,7 @@ class LayerIndexer:
 
 
 class Optimizer:
-    """Implements the Adam gradient descent optimizer with Polyak averaging."""
+    """Implements the Adam gradient descent optimizer with Polyak-Ruppert averaging."""
     def __init__(self, params, step_size=1, average=True, b1=0.9, b2=0.999):
         """Initializes the optimizer."""
         self.params = params
@@ -129,7 +129,7 @@ class Optimizer:
         g2_hat = self.g2/(1-self.b2**self.step)
         self.params -= self.step_size * g1_hat / (np.sqrt(g2_hat) + EPS)
 
-        # Polyak averaging
+        # Polyak-Ruppert averaging
         if self.average:
             weight = 1 / self.step
             self.p1[:] = (1-weight)*self.p1 + weight*self.params
