@@ -337,7 +337,8 @@ class CaffeModel:
                 layers.append(layer)
         return layers
 
-    def layer_info(self, layer):
+    @staticmethod
+    def layer_info(layer):
         """Returns the number of channels and the scale factor vs. the image for a VGG layer."""
         assert layer.startswith('conv') or layer.startswith('pool')
         level = int(layer[4])-1
