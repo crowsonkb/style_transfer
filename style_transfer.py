@@ -764,8 +764,8 @@ def parse_args():
         help='bias averaging of successive iterates toward the present. '
         '0 = simple average, 1 = triangle window shape, etc.')
     parser.add_argument(
-        '--content-layers', nargs='*', default=['conv4_2'], metavar='LAYER',
-        help='the layers to use for content')
+        '--content-layers', nargs='*', default=['conv4_1', 'conv4_2', 'conv4_3', 'conv4_4'],
+        metavar='LAYER', help='the layers to use for content')
     parser.add_argument(
         '--style-layers', nargs='*', metavar='LAYER',
         default=['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1'],
