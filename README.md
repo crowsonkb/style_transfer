@@ -18,7 +18,7 @@ Dependencies:
 
 ## Example
 
-The obligatory Golden Gate Bridge + Starry Night style transfer ([big version](https://s3-us-west-2.amazonaws.com/cb0a-46ef-cc86-8dda/style_transfer_examples/golden_gate_sn.jpg)):
+The obligatory Golden Gate Bridge + Starry Night style transfer ([big version](https://s3-us-west-2.amazonaws.com/cb0a-46ef-cc86-8dda/style_transfer_examples/golden_gate_sn_big.jpg)):
 
 <img src="examples/golden_gate_sn.jpg" width="512" height="384">
 
