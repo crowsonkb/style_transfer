@@ -106,17 +106,17 @@ class LayerIndexer:
 
 class Optimizer:
     """Implements the Adam gradient descent optimizer with Polyak-Ruppert averaging."""
-    def __init__(self, params, step_size=1, average=True, b1=0.9, b2=0.999):
+    def __init__(self, params, step_size=1, average=True, b1=0.9, b2=0.999, initial_step=0):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
         self.average = average
         self.b1 = b1
         self.b2 = b2
-        self.step = 0
+        self.step = initial_step
         self.g1 = np.zeros_like(params)
         self.g2 = np.zeros_like(params)
-        self.p1 = np.zeros_like(params)
+        self.p1 = params.copy()
 
     def update(self, grad):
         """Returns a step's parameter update given its gradient."""
@@ -283,6 +283,7 @@ class CaffeModel:
         self.grams = None
         self.current_output = None
         self.img = None
+        self.step = 0
 
     def get_image(self, params=None):
         """Gets the current model input (or provided alternate input) as a PIL image."""
@@ -504,7 +505,9 @@ class CaffeModel:
             self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
         old_img = self.img.copy()
 
-        optimizer = Optimizer(self.img, step_size=ARGS.step_size, average=not ARGS.no_average)
+        optimizer = Optimizer(self.img, step_size=ARGS.step_size, average=not ARGS.no_average,
+                              initial_step=self.step)
+        self.step += 1
         log = open('log.csv', 'w')
         print('tv loss', file=log, flush=True)
 
