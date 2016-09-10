@@ -129,6 +129,7 @@ class Optimizer:
         self.b1 = b1
         self.b2 = b2
         self.step = 0
+        self.xy = np.zeros(2, dtype=np.int32)
         self.g1 = np.zeros_like(params)
         self.g2 = np.zeros_like(params)
         self.p1 = params.copy()
@@ -156,6 +157,7 @@ class Optimizer:
 
     def roll(self, xy):
         """Rolls the optimizer's internal state."""
+        self.xy += xy
         self.g1[:] = roll2(self.g1, xy)
         self.g2[:] = roll2(self.g2, xy)
         self.p1[:] = roll2(self.p1, xy)
@@ -180,6 +182,7 @@ class Optimizer:
         self.g2 = optimizer.g2
         self.p1 = optimizer.p1
         self.step = optimizer.step
+        self.roll(-optimizer.xy)
 
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
