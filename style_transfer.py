@@ -37,6 +37,18 @@ def normalize(arr):
     return arr / (np.mean(np.abs(arr)) + EPS)
 
 
+def resize(arr, size, method=Image.BICUBIC):
+    """Resamples a CxHxW Numpy float array to a different HxW shape."""
+    h, w = size
+    arr = np.float32(arr)
+    if arr.ndim != 3:
+        raise TypeError('Only 3D CxHxW arrays are supported')
+    planes = [arr[i, :, :] for i in range(arr.shape[0])]
+    imgs = [Image.fromarray(plane) for plane in planes]
+    imgs_resized = [img.resize((w, h), method) for img in imgs]
+    return np.stack([np.array(img) for img in imgs_resized])
+
+
 def roll2(arr, xy):
     """Translates an array by the shift xy, wrapping at the edges."""
     return np.roll(np.roll(arr, xy[0], 2), xy[1], 1)
@@ -106,14 +118,16 @@ class LayerIndexer:
 
 class Optimizer:
     """Implements the Adam gradient descent optimizer with Polyak-Ruppert averaging."""
-    def __init__(self, params, step_size=1, average=True, b1=0.9, b2=0.999, initial_step=0):
+    def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, b2=0.999):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
-        self.average = average
+        self.averaging = averaging
+        assert averaging_bias >= 0
+        self.avg_bias = averaging_bias
         self.b1 = b1
         self.b2 = b2
-        self.step = initial_step
+        self.step = 0
         self.g1 = np.zeros_like(params)
         self.g2 = np.zeros_like(params)
         self.p1 = params.copy()
@@ -130,8 +144,8 @@ class Optimizer:
         self.params -= self.step_size * g1_hat / (np.sqrt(g2_hat) + EPS)
 
         # Polyak-Ruppert averaging
-        if self.average:
-            weight = 1 / self.step
+        if self.averaging:
+            weight = (1+self.avg_bias) / (self.step+self.avg_bias)
             self.p1[:] = (1-weight)*self.p1 + weight*self.params
             return self.p1
         else:
@@ -142,6 +156,16 @@ class Optimizer:
         self.g1[:] = roll2(self.g1, xy)
         self.g2[:] = roll2(self.g2, xy)
         self.p1[:] = roll2(self.p1, xy)
+
+    def set_params(self, last_iterate):
+        """Sets params to the supplied array (a possibly-resized or altered last non-averaged
+        iterate), resampling the optimizer's internal state if the shape has changed."""
+        self.step = 0
+        self.params = last_iterate
+        hw = self.params.shape[-2:]
+        self.g1 = resize(self.g1, hw)
+        self.g2 = resize(self.g2, hw, Image.NEAREST)
+        self.p1 = resize(self.p1, hw)
 
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
@@ -281,9 +305,7 @@ class CaffeModel:
         self.diff = LayerIndexer(self.net, 'diff')
         self.features = None
         self.grams = None
-        self.current_output = None
         self.img = None
-        self.step = 0
 
     def get_image(self, params=None):
         """Gets the current model input (or provided alternate input) as a PIL image."""
@@ -486,49 +508,51 @@ class CaffeModel:
             self.features[layer] = roll2(feat, xy // scale)
         self.img[:] = roll2(self.img, xy)
 
-    def transfer(self, pool, iterations, content_image, style_image, initial_image=None,
-                 callback=None):
+
+class StyleTransfer:
+    """Performs style transfer."""
+    def __init__(self, model):
+        self.model = model
+        self.current_output = None
+        self.optimizer = None
+        self.pool = None
+        self.step = 0
+
+    def transfer(self, iterations, params, content_image, style_image, callback=None):
         """Performs style transfer from style_image to content_image."""
         content_weight = ARGS.content_weight / max(len(ARGS.content_layers), 1)
         style_weight = 1 / max(len(ARGS.style_layers), 1)
 
-        layers = self.preprocess_images(pool, content_image, style_image, ARGS.content_layers,
-                                        ARGS.style_layers, ARGS.tile_size)
-        pool.set_features_and_grams(self.features, self.grams)
+        layers = self.model.preprocess_images(
+            self.pool, content_image, style_image, ARGS.content_layers, ARGS.style_layers,
+            ARGS.tile_size)
+        self.pool.set_features_and_grams(self.model.features, self.model.grams)
+        self.model.img = params
 
-        # Initialize the model with a noise image
-        w, h = content_image.size
-        if initial_image:
-            assert initial_image.size == (w, h), 'Initial image size must match content image'
-            self.set_image(initial_image)
-        else:
-            self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
-        old_img = self.img.copy()
-
-        optimizer = Optimizer(self.img, step_size=ARGS.step_size, average=not ARGS.no_average,
-                              initial_step=self.step)
+        old_img = self.optimizer.p1.copy()
         self.step += 1
         log = open('log.csv', 'w')
         print('tv loss', file=log, flush=True)
 
         for step in range(1, iterations+1):
             # Forward jitter
-            jitter_scale, _ = self.layer_info([l for l in layers if l in ARGS.content_layers][0])
+            jitter_scale, _ = self.model.layer_info(
+                [l for l in layers if l in ARGS.content_layers][0])
             xy = np.array((0, 0))
-            img_size = np.array(self.img.shape[-2:])
+            img_size = np.array(self.model.img.shape[-2:])
             if max(*img_size) > ARGS.tile_size:
                 xy = np.int32(np.random.uniform(-0.5, 0.5, size=2) * img_size) // jitter_scale
-            self.roll(xy, jitter_scale=jitter_scale)
-            optimizer.roll(xy * jitter_scale)
+            self.model.roll(xy, jitter_scale=jitter_scale)
+            self.optimizer.roll(xy * jitter_scale)
 
             # Compute style+content gradient
-            grad = self.eval_sc_grad(pool, xy * jitter_scale, ARGS.content_layers,
-                                     ARGS.style_layers, content_weight, style_weight,
-                                     tile_size=ARGS.tile_size)
+            grad = self.model.eval_sc_grad(self.pool, xy * jitter_scale, ARGS.content_layers,
+                                           ARGS.style_layers, content_weight, style_weight,
+                                           tile_size=ARGS.tile_size)
 
             # Compute total variation gradient
             tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
-            tv_grad = convolve(self.img, tv_kernel, mode='wrap')/255
+            tv_grad = convolve(self.model.img, tv_kernel, mode='wrap')/255
 
             # Selectively blur edges more to obscure jitter and tile seams
             tv_mask = np.ones_like(tv_grad)
@@ -542,17 +566,17 @@ class CaffeModel:
             grad = normalize(grad) + ARGS.tv_weight*tv_grad
 
             # In-place gradient descent update
-            avg_img = optimizer.update(grad)
+            avg_img = self.optimizer.update(grad)
 
             # Backward jitter
-            self.roll(-xy, jitter_scale=jitter_scale)
-            optimizer.roll(-xy * jitter_scale)
+            self.model.roll(-xy, jitter_scale=jitter_scale)
+            self.optimizer.roll(-xy * jitter_scale)
 
             # Apply constraints
-            mean = self.mean.squeeze()
-            self.img[0] = np.clip(self.img[0], -mean[0], 255-mean[0])
-            self.img[1] = np.clip(self.img[1], -mean[1], 255-mean[1])
-            self.img[2] = np.clip(self.img[2], -mean[2], 255-mean[2])
+            mean = self.model.mean.squeeze()
+            self.model.img[0] = np.clip(self.model.img[0], -mean[0], 255-mean[0])
+            self.model.img[1] = np.clip(self.model.img[1], -mean[1], 255-mean[1])
+            self.model.img[2] = np.clip(self.model.img[2], -mean[2], 255-mean[2])
 
             # Compute update size statistic
             update_size = np.mean(np.abs(avg_img - old_img))
@@ -564,28 +588,46 @@ class CaffeModel:
             tv_loss = 0.5 * np.sum((tv_h**2 + tv_v**2)) / avg_img.size
             print(tv_loss, file=log, flush=True)
 
-            self.current_output = self.get_image(avg_img)
+            self.current_output = self.model.get_image(avg_img)
 
             if callback is not None:
                 callback(step=step, update_size=update_size, loss=tv_loss)
 
-        return self.get_image()
+        return self.current_output, self.model.get_image()
 
     def transfer_multiscale(self, sizes, iterations, content_image, style_image, initial_image,
                             **kwargs):
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
-        pool = TileWorkerPool(self, ARGS.devices)
+        last_iterate = None
+        self.pool = TileWorkerPool(self.model, ARGS.devices)
+
         for size in sizes:
             content_scaled = resize_to_fit(content_image, size)
             style_scaled = resize_to_fit(style_image, round(size * ARGS.style_scale))
-            if output_image:
-                initial_image = output_image.resize(content_scaled.size, Image.BICUBIC)
-            else:
-                if initial_image:
+            if output_image:  # this is not the first scale
+                initial_image = last_iterate.resize(content_scaled.size, Image.BICUBIC)
+                self.model.set_image(initial_image)
+                params = self.model.img
+                self.optimizer.set_params(params)
+            else:  # this is the first scale
+                if initial_image:  # and the user supplied an initial image
                     initial_image = initial_image.resize(content_scaled.size, Image.BICUBIC)
-            output_image = self.transfer(pool, iterations, content_scaled, style_scaled,
-                                         initial_image=initial_image, **kwargs)
+                    self.model.set_image(initial_image)
+                else:  # and the user did not supply an initial image
+                    w, h = content_scaled.size
+                    self.model.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
+
+                # make sure the optimizer's params array shares memory with self.model.img
+                # after preprocess_image is called later
+                params = self.model.img
+                self.optimizer = Optimizer(
+                    params, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
+                    averaging_bias=ARGS.averaging_bias)
+
+            output_image, last_iterate = self.transfer(iterations, params, content_scaled,
+                                                       style_scaled, **kwargs)
+
         return output_image
 
 
@@ -597,8 +639,8 @@ class Progress:
     update_size = np.nan
     loss = np.nan
 
-    def __init__(self, model, url=None, steps=-1, save_every=0):
-        self.model = model
+    def __init__(self, transfer, url=None, steps=-1, save_every=0):
+        self.transfer = transfer
         self.url = url
         self.steps = steps
         self.save_every = save_every
@@ -609,7 +651,7 @@ class Progress:
         self.update_size = update_size
         self.loss = loss
         if self.save_every and self.step % self.save_every == 0:
-            self.model.current_output.save('out_%04d.png' % self.step)
+            self.transfer.current_output.save('out_%04d.png' % self.step)
         if self.step == 1:
             if self.url:
                 webbrowser.open(self.url)
@@ -622,7 +664,7 @@ class Progress:
 
 class ProgressServer(ThreadingMixIn, HTTPServer):
     """HTTP server class."""
-    model = None
+    transfer = None
     progress = None
     hidpi = False
 
@@ -658,15 +700,15 @@ class ProgressHandler(BaseHTTPRequestHandler):
                 't': self.server.progress.t,
                 'update_size': self.server.progress.update_size,
                 'loss': self.server.progress.loss,
-                'w': self.server.model.current_output.size[0] / scale,
-                'h': self.server.model.current_output.size[1] / scale,
+                'w': self.server.transfer.current_output.size[0] / scale,
+                'h': self.server.transfer.current_output.size[1] / scale,
             }).encode())
         elif self.path == '/out.png':
             self.send_response(200)
             self.send_header('Content-type', 'image/png')
             self.end_headers()
             buf = io.BytesIO()
-            self.server.model.current_output.save(buf, format='png')
+            self.server.transfer.current_output.save(buf, format='png')
             self.wfile.write(buf.getvalue())
         else:
             self.send_error(404)
@@ -700,12 +742,9 @@ def parse_args():
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
     parser.add_argument('--init', metavar='IMAGE', help='the initial image')
     parser.add_argument(
-        '--iterations', '-i', type=int, default=250, help='the number of iterations')
+        '--iterations', '-i', type=int, default=300, help='the number of iterations')
     parser.add_argument(
-        '--step-size', '-st', type=ffloat, default=20, help='the step size (iteration magnitude)')
-    parser.add_argument(
-        '--no-average', default=False, action='store_true',
-        help='disable averaging of successive iterates')
+        '--step-size', '-st', type=ffloat, default=15, help='the step size (iteration magnitude)')
     parser.add_argument(
         '--size', '-s', nargs='+', type=int, default=[256], help='the output size(s)')
     parser.add_argument(
@@ -714,6 +753,13 @@ def parse_args():
         '--content-weight', '-cw', type=ffloat, default=0.05, help='the content image factor')
     parser.add_argument(
         '--tv-weight', '-tw', type=ffloat, default=0.5, help='the smoothing factor')
+    parser.add_argument(
+        '--no-averaging', default=False, action='store_true',
+        help='disable averaging of successive iterates')
+    parser.add_argument(
+        '--averaging-bias', type=ffloat, default=0,
+        help='bias averaging of successive iterates toward the present. '
+        '0 = simple average, 1 = triangle window shape, etc.')
     parser.add_argument(
         '--content-layers', nargs='*', default=['conv4_2'], metavar='LAYER',
         help='the layers to use for content')
@@ -760,6 +806,7 @@ def main():
     caffe.set_mode_cpu()
 
     model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean)
+    transfer = StyleTransfer(model)
     if ARGS.list_layers:
         print('Layers:')
         for layer in model.layers():
@@ -776,24 +823,24 @@ def main():
     server_address = ('', ARGS.port)
     url = 'http://127.0.0.1:%d/' % ARGS.port
     server = ProgressServer(server_address, ProgressHandler)
-    server.model = model
+    server.transfer = transfer
     server.hidpi = ARGS.hidpi
     progress_args = {}
     if not ARGS.no_browser:
         progress_args['url'] = url
     server.progress = Progress(
-        model, steps=ARGS.iterations*len(sizes), save_every=ARGS.save_every, **progress_args)
+        transfer, steps=ARGS.iterations*len(sizes), save_every=ARGS.save_every, **progress_args)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print('\nWatch the progress at: %s\n' % url)
 
     np.random.seed(0)
     try:
-        model.transfer_multiscale(sizes, ARGS.iterations, content_image, style_image,
-                                  initial_image, callback=server.progress)
+        transfer.transfer_multiscale(sizes, ARGS.iterations, content_image, style_image,
+                                     initial_image, callback=server.progress)
     except KeyboardInterrupt:
         pass
     print('Saving output as %s.' % ARGS.output_image)
-    model.current_output.save(ARGS.output_image)
+    transfer.current_output.save(ARGS.output_image)
 
 if __name__ == '__main__':
     main()
