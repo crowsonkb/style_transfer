@@ -160,6 +160,9 @@ class Optimizer:
     def set_params(self, last_iterate):
         """Sets params to the supplied array (a possibly-resized or altered last non-averaged
         iterate), resampling the optimizer's internal state if the shape has changed."""
+        # P-R averaging should only average over the current scale. For some reason the result
+        # looks better if Adam is provided with an incorrect step number for its resampled internal
+        # state.
         self.step = 0
         self.params = last_iterate
         hw = self.params.shape[-2:]
