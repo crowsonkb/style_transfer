@@ -100,48 +100,44 @@ class LayerIndexer:
 
 
 class Optimizer:
-    """Implements the RMSprop gradient descent optimizer with Nesterov momentum."""
-    def __init__(self, params, step_size=1, max_step=0, b1=0.9, b2=0.9):
+    """Implements the Adam gradient descent optimizer with Polyak averaging."""
+    def __init__(self, params, step_size=1, average=True, b1=0.9, b2=0.999):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
-        self.max_step = max_step
+        self.average = average
         self.b1 = b1
         self.b2 = b2
-        self.step = 1
-        self.m1 = np.zeros_like(params)
-        self.m2 = np.zeros_like(params)
+        self.step = 0
+        self.g1 = np.zeros_like(params)
+        self.g2 = np.zeros_like(params)
+        self.p1 = np.zeros_like(params)
 
-    def get_ss(self):
-        """Get the current step size."""
-        if self.max_step:
-            # gamma = decay_by**(1/every)
-            assert ARGS.decay_to > 0, 'Exponential decay does not support 0 or negative decay_to'
-            gamma = ARGS.decay_to**(1/self.max_step)
-            return self.step_size * gamma**self.step
-        return self.step_size
-
-    def update(self, grad, old_params):
-        """Returns a step's parameter update given its gradient and pre-Nesterov-step params."""
-        self.m1[:] = self.b1*self.m1 + grad
-        self.m2[:] = self.b2*self.m2 + (1-self.b2)*grad**2
-        update = self.get_ss() * self.m1 / (np.sqrt(self.m2) + EPS)
-
-        self.params[:] = old_params - update
+    def update(self, grad):
+        """Returns a step's parameter update given its gradient."""
         self.step += 1
-        return update
 
-    def apply_nesterov_step(self):
-        """Updates params with an estimate of the next update."""
-        old_params = self.params.copy()
-        self.params -= self.get_ss() * self.b1*self.m1 / (np.sqrt(self.b2*self.m2) + EPS)
-        return old_params
+        # Adam
+        self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
+        self.g2[:] = self.b2*self.g2 + (1-self.b2)*grad**2
+        g1_hat = self.g1/(1-self.b1**self.step)
+        g2_hat = self.g2/(1-self.b2**self.step)
+        self.params -= self.step_size * g1_hat / (np.sqrt(g2_hat) + EPS)
+
+        # Polyak averaging
+        if self.average:
+            weight = 1 / self.step
+            self.p1[:] = (1-weight)*self.p1 + weight*self.params
+            return self.p1
+        else:
+            return self.params
 
     def roll(self, xy):
         """Rolls the optimizer's internal state."""
         x, y = xy
-        self.m1[:] = np.roll(np.roll(self.m1, x, 2), y, 1)
-        self.m2[:] = np.roll(np.roll(self.m2, x, 2), y, 1)
+        self.g1[:] = np.roll(np.roll(self.g1, x, 2), y, 1)
+        self.g2[:] = np.roll(np.roll(self.g2, x, 2), y, 1)
+        self.p1[:] = np.roll(np.roll(self.p1, x, 2), y, 1)
 
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
@@ -284,9 +280,11 @@ class CaffeModel:
         self.current_output = None
         self.img = None
 
-    def get_image(self):
-        """Gets the current model input as a PIL image."""
-        arr = self.img + self.mean
+    def get_image(self, params=None):
+        """Gets the current model input (or provided alternate input) as a PIL image."""
+        if params is None:
+            params = self.img
+        arr = params + self.mean
         if self.bgr:
             arr = arr[::-1]
         arr = arr.transpose((1, 2, 0))
@@ -503,7 +501,7 @@ class CaffeModel:
         else:
             self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
 
-        optimizer = Optimizer(self.img, step_size=ARGS.step_size, max_step=iterations+1)
+        optimizer = Optimizer(self.img, step_size=ARGS.step_size, average=not ARGS.no_average)
         log = open('log.csv', 'w')
         print('tv loss', file=log, flush=True)
 
@@ -518,7 +516,6 @@ class CaffeModel:
             optimizer.roll(xy * jitter_scale)
 
             # Compute style+content gradient
-            old_params = optimizer.apply_nesterov_step()
             grad = self.eval_sc_grad(pool, xy * jitter_scale, ARGS.content_layers,
                                      ARGS.style_layers, content_weight, style_weight,
                                      tile_size=ARGS.tile_size)
@@ -539,7 +536,9 @@ class CaffeModel:
             grad = normalize(grad) + ARGS.tv_weight*tv_grad
 
             # In-place gradient descent update
-            update_size = np.mean(np.abs(optimizer.update(grad, old_params)))
+            old_img = self.img.copy()
+            avg_img = optimizer.update(grad)
+            update_size = np.mean(np.abs(old_img - self.img))
 
             # Backward jitter
             self.roll(-xy, jitter_scale=jitter_scale)
@@ -550,15 +549,14 @@ class CaffeModel:
             self.img[0] = np.clip(self.img[0], -mean[0], 255-mean[0])
             self.img[1] = np.clip(self.img[1], -mean[1], 255-mean[1])
             self.img[2] = np.clip(self.img[2], -mean[2], 255-mean[2])
-            # print('mean params=%g' % np.mean(self.img))
 
             # Compute tv loss statistic
-            tv_h = convolve1d(self.img, [-1, 1], axis=1)
-            tv_v = convolve1d(self.img, [-1, 1], axis=2)
-            tv_loss = 0.5 * np.sum((tv_h**2 + tv_v**2)) / self.img.size
+            tv_h = convolve1d(avg_img, [-1, 1], axis=1)
+            tv_v = convolve1d(avg_img, [-1, 1], axis=2)
+            tv_loss = 0.5 * np.sum((tv_h**2 + tv_v**2)) / avg_img.size
             print(tv_loss, file=log, flush=True)
 
-            self.current_output = self.get_image()
+            self.current_output = self.get_image(avg_img)
 
             if callback is not None:
                 callback(step=step, update_size=update_size, loss=tv_loss)
@@ -694,9 +692,12 @@ def parse_args():
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
     parser.add_argument('--init', metavar='IMAGE', help='the initial image')
     parser.add_argument(
-        '--iterations', '-i', type=int, default=200, help='the number of iterations')
+        '--iterations', '-i', type=int, default=250, help='the number of iterations')
     parser.add_argument(
-        '--step-size', '-st', type=ffloat, default=2, help='the step size (iteration strength)')
+        '--step-size', '-st', type=ffloat, default=20, help='the step size (iteration magnitude)')
+    parser.add_argument(
+        '--no-average', default=False, action='store_true',
+        help='disable averaging of successive iterates')
     parser.add_argument(
         '--size', '-s', nargs='+', type=int, default=[256], help='the output size(s)')
     parser.add_argument(
@@ -704,7 +705,7 @@ def parse_args():
     parser.add_argument(
         '--content-weight', '-cw', type=ffloat, default=0.05, help='the content image factor')
     parser.add_argument(
-        '--tv-weight', '-tw', type=ffloat, default=1, help='the smoothing factor')
+        '--tv-weight', '-tw', type=ffloat, default=0.5, help='the smoothing factor')
     parser.add_argument(
         '--content-layers', nargs='*', default=['conv4_2'], metavar='LAYER',
         help='the layers to use for content')
@@ -738,9 +739,6 @@ def parse_args():
         help='device numbers to use (-1 for cpu)')
     parser.add_argument(
         '--tile-size', type=int, default=512, help='the maximum rendering tile size')
-    parser.add_argument(
-        '--decay-to', metavar='N', type=float, default=0.05,
-        help='decay step size by a factor of N by the end of a scale')
     global ARGS  # pylint: disable=global-statement
     ARGS = parser.parse_args()
 
