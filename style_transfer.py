@@ -140,9 +140,11 @@ class Optimizer:
         # Adam
         self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
         self.g2[:] = self.b2*self.g2 + (1-self.b2)*grad**2
-        g1_hat = self.g1/(1-self.b1**self.step)
+        g_hat = grad/(1-self.b1**self.step)
+        g1_hat = self.g1/(1-self.b1**(self.step+1))
         g2_hat = self.g2/(1-self.b2**self.step)
-        self.params -= self.step_size * g1_hat / (np.sqrt(g2_hat) + EPS)
+        g1_bar = self.b1*g1_hat + (1-self.b1)*g_hat
+        self.params -= self.step_size * g1_bar / (np.sqrt(g2_hat) + EPS)
 
         # Polyak-Ruppert averaging
         weight = (1+self.avg_bias) / (self.step+self.avg_bias)
