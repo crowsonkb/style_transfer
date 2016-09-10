@@ -37,6 +37,11 @@ def normalize(arr):
     return arr / (np.mean(np.abs(arr)) + EPS)
 
 
+def roll2(arr, xy):
+    """Translates an array by the shift xy, wrapping at the edges."""
+    return np.roll(np.roll(arr, xy[0], 2), xy[1], 1)
+
+
 def gram_matrix(feat):
     """Computes the Gram matrix corresponding to a feature map."""
     n, mh, mw = feat.shape
@@ -134,10 +139,9 @@ class Optimizer:
 
     def roll(self, xy):
         """Rolls the optimizer's internal state."""
-        x, y = xy
-        self.g1[:] = np.roll(np.roll(self.g1, x, 2), y, 1)
-        self.g2[:] = np.roll(np.roll(self.g2, x, 2), y, 1)
-        self.p1[:] = np.roll(np.roll(self.p1, x, 2), y, 1)
+        self.g1[:] = roll2(self.g1, xy)
+        self.g2[:] = roll2(self.g2, xy)
+        self.p1[:] = roll2(self.p1, xy)
 
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
@@ -478,10 +482,8 @@ class CaffeModel:
         xy = xy * jitter_scale
         for layer, feat in self.features.items():
             scale, _ = self.layer_info(layer)
-            x, y = xy // scale
-            self.features[layer] = np.roll(np.roll(feat, x, 2), y, 1)
-        x, y = xy
-        self.img[:] = np.roll(np.roll(self.img, x, 2), y, 1)
+            self.features[layer] = roll2(feat, xy // scale)
+        self.img[:] = roll2(self.img, xy)
 
     def transfer(self, pool, iterations, content_image, style_image, initial_image=None,
                  callback=None):
@@ -500,6 +502,7 @@ class CaffeModel:
             self.set_image(initial_image)
         else:
             self.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
+        old_img = self.img.copy()
 
         optimizer = Optimizer(self.img, step_size=ARGS.step_size, average=not ARGS.no_average)
         log = open('log.csv', 'w')
@@ -536,9 +539,7 @@ class CaffeModel:
             grad = normalize(grad) + ARGS.tv_weight*tv_grad
 
             # In-place gradient descent update
-            old_img = self.img.copy()
             avg_img = optimizer.update(grad)
-            update_size = np.mean(np.abs(old_img - self.img))
 
             # Backward jitter
             self.roll(-xy, jitter_scale=jitter_scale)
@@ -549,6 +550,10 @@ class CaffeModel:
             self.img[0] = np.clip(self.img[0], -mean[0], 255-mean[0])
             self.img[1] = np.clip(self.img[1], -mean[1], 255-mean[1])
             self.img[2] = np.clip(self.img[2], -mean[2], 255-mean[2])
+
+            # Compute update size statistic
+            update_size = np.mean(np.abs(avg_img - old_img))
+            old_img[:] = avg_img
 
             # Compute tv loss statistic
             tv_h = convolve1d(avg_img, [-1, 1], axis=1)
