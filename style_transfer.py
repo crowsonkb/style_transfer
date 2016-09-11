@@ -653,7 +653,8 @@ class StyleTransfer:
                     self.model.img = self.optimizer.params
 
             params = self.model.img
-            output_image, last_iterate = self.transfer(iterations, params, content_scaled,
+            iters_i = iterations[min(i, len(iterations)-1)]
+            output_image, last_iterate = self.transfer(iters_i, params, content_scaled,
                                                        style_scaled, **kwargs)
 
         return output_image
@@ -778,7 +779,7 @@ def parse_args():
     parser.add_argument('--init', metavar='IMAGE', help='the initial image')
     parser.add_argument('--state', help='a .state file (the initial state)')
     parser.add_argument(
-        '--iterations', '-i', type=int, default=300, help='the number of iterations')
+        '--iterations', '-i', nargs='+', type=int, default=[300], help='the number of iterations')
     parser.add_argument(
         '--step-size', '-st', type=ffloat, default=15, help='the step size (iteration magnitude)')
     parser.add_argument(
@@ -864,8 +865,11 @@ def main():
     progress_args = {}
     if not ARGS.no_browser:
         progress_args['url'] = url
+    steps = 0
+    for i in range(len(sizes)):
+        steps += ARGS.iterations[min(i, len(ARGS.iterations)-1)]
     server.progress = Progress(
-        transfer, steps=ARGS.iterations*len(sizes), save_every=ARGS.save_every, **progress_args)
+        transfer, steps=steps, save_every=ARGS.save_every, **progress_args)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print('\nWatch the progress at: %s\n' % url)
 
