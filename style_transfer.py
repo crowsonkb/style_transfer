@@ -40,10 +40,10 @@ def normalize(arr):
 
 def resize(arr, size, method=Image.BICUBIC):
     """Resamples a CxHxW Numpy float array to a different HxW shape."""
-    h, w = size
-    arr = np.float32(arr)
     if arr.ndim != 3:
         raise TypeError('Only 3D CxHxW arrays are supported')
+    h, w = size
+    arr = np.float32(arr)
     planes = [arr[i, :, :] for i in range(arr.shape[0])]
     imgs = [Image.fromarray(plane) for plane in planes]
     imgs_resized = [img.resize((w, h), method) for img in imgs]
@@ -141,10 +141,9 @@ class Optimizer:
         # Adam
         self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
         self.g2[:] = self.b2*self.g2 + (1-self.b2)*grad**2
-        g_hat = grad/(1-self.b1**self.step)
         g1_hat = self.g1/(1-self.b1**(self.step+1))
         g2_hat = self.g2/(1-self.b2**self.step)
-        g1_bar = self.b1*g1_hat + (1-self.b1)*g_hat
+        g1_bar = self.b1*g1_hat + (1-self.b1)*grad/(1-self.b1**self.step)
         self.params -= self.step_size * g1_bar / (np.sqrt(g2_hat) + EPS)
 
         # Polyak-Ruppert averaging
