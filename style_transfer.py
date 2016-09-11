@@ -621,8 +621,8 @@ class StyleTransfer:
         last_iterate = None
         self.pool = TileWorkerPool(self.model, ARGS.devices)
 
-        for size in sizes:
-            content_scaled = resize_to_fit(content_image, size)
+        for i, size in enumerate(sizes):
+            content_scaled = resize_to_fit(content_image, size, scale_up=True)
             style_scaled = resize_to_fit(style_image, round(size * ARGS.style_scale))
             if output_image:  # this is not the first scale
                 initial_image = last_iterate.resize(content_scaled.size, Image.BICUBIC)
@@ -747,10 +747,12 @@ class ProgressHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
 
-def resize_to_fit(image, size):
+def resize_to_fit(image, size, scale_up=False):
     """Resizes image to fit into a size-by-size square."""
     size = round(size)
     w, h = image.size
+    if not scale_up and max(w, h) <= size:
+        return image
     new_w, new_h = w, h
     if w > h:
         new_w = size
