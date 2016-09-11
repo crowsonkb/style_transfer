@@ -16,6 +16,11 @@ Dependencies:
 - Multi-GPU support (ex: `--devices 0 1 2 3`). Four GPUs, for instance, can process four tiles at a time.
 - Uses [Polyak-Ruppert averaging](https://www.researchgate.net/profile/Boris_Polyak2/publication/236736831_Acceleration_of_stochastic_approximation_by_averaging_SIAM_J_Control_Optim_30_838-855/links/0f31753227e964baab000000.pdf) over successive iterations to reduce image noise.
 
+
+## Known issues
+
+- Multiple content layers produce incorrect feature maps when there is more than one tile.
+
 ## Example
 
 The obligatory Golden Gate Bridge + Starry Night style transfer ([big version](https://s3-us-west-2.amazonaws.com/cb0a-46ef-cc86-8dda/style_transfer_examples/golden_gate_sn_big.jpg)):
