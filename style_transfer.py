@@ -317,6 +317,7 @@ class CaffeModel:
         self.weights = weights
         self.mean = np.float32(mean).reshape((3, 1, 1))
         self.bgr = bgr
+        self.last_layer = 'pool5'
         self.net = caffe.Net(self.deploy, 1, weights=self.weights)
         self.data = LayerIndexer(self.net, 'data')
         self.diff = LayerIndexer(self.net, 'diff')
@@ -365,7 +366,7 @@ class CaffeModel:
         """Computes a single tile in a set of feature maps."""
         self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
         self.data['data'] = img
-        self.net.forward(end=layers[0])
+        self.net.forward(end=self.last_layer)
         return {layer: self.data[layer] for layer in layers}
 
     def eval_features_once(self, pool, layers, tile_size=512):
@@ -459,7 +460,7 @@ class CaffeModel:
         # Prepare gradient buffers and run the model forward
         for layer in layers:
             self.diff[layer] = 0
-        self.net.forward(end=layers[0])
+        self.net.forward(end=self.last_layer)
         # content_loss, style_loss = 0, 0
 
         for i, layer in enumerate(layers):
