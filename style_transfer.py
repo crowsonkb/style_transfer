@@ -524,7 +524,7 @@ class CaffeModel:
         xy = xy * jitter_scale
         for layer, feat in self.features.items():
             scale, _ = self.layer_info(layer)
-            self.features[layer] = roll2(feat, xy // scale)
+            self.features[layer][:] = roll2(feat, xy // scale)
         self.img[:] = roll2(self.img, xy)
 
 
