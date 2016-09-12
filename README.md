@@ -19,7 +19,7 @@ Dependencies:
 
 ## Known issues
 
-- Multiple content layers produce incorrect feature maps when there is more than one tile.
+- Use of more than one content layer will produce incorrect feature maps when there is more than one tile.
 
 ## Example
 
@@ -30,6 +30,8 @@ The obligatory Golden Gate Bridge + Starry Night style transfer ([big version](h
 ## Installation
 
 ### Building pycaffe for Python 3.5
+
+*If you use pycaffe for other things, you might want to do this in a second copy of Caffe so you don't break things using Python 2.*
 
 On OS X, you can install Python 3 and Boost.Python using [Homebrew](http://brew.sh):
 
