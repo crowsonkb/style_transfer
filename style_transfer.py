@@ -60,7 +60,7 @@ def gram_matrix(feat):
     """Computes the Gram matrix corresponding to a feature map."""
     n, mh, mw = feat.shape
     feat = feat.reshape((n, mh * mw))
-    gram = feat @ feat.T / np.float32(feat.size)
+    gram = np.dot(feat, feat.T) / np.float32(feat.size)
     return gram
 
 
@@ -477,7 +477,7 @@ class CaffeModel:
                 current_gram = gram_matrix(self.data[layer])
                 n, mh, mw = self.data[layer].shape
                 feat = self.data[layer].reshape((n, mh * mw))
-                s_grad = (current_gram - self.grams[layer]) @ feat
+                s_grad = np.dot(current_gram - self.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
                 self.diff[layer] += normalize(s_grad)*style_weight
                 # style_loss += 0.5 * np.sum((current_gram - self.grams[layer])**2)
