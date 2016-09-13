@@ -836,6 +836,7 @@ def parse_args():
 
 def main():
     """CLI interface for style transfer."""
+    start_time = time.perf_counter()
     parse_args()
 
     os.environ['GLOG_minloglevel'] = '2'
@@ -883,12 +884,16 @@ def main():
             sizes, ARGS.iterations, content_image, style_image, initial_image,
             callback=server.progress, initial_state=state)
     except KeyboardInterrupt:
-        pass
-    print('Saving output as %s.' % ARGS.output_image)
-    transfer.current_output.save(ARGS.output_image)
-    a, _, _ = ARGS.output_image.rpartition('.')
-    print('Saving state as %s.' % (a + '.state'))
-    transfer.save_state(a + '.state')
+        print()
+
+    if transfer.current_output:
+        print('Saving output as %s.' % ARGS.output_image)
+        transfer.current_output.save(ARGS.output_image)
+        a, _, _ = ARGS.output_image.rpartition('.')
+        print('Saving state as %s.' % (a + '.state'))
+        transfer.save_state(a + '.state')
+    time_spent = time.perf_counter() - start_time
+    print('Exiting after %dm %.2fs.' % (time_spent // 60, time_spent % 60))
 
 if __name__ == '__main__':
     main()
