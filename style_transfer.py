@@ -604,7 +604,7 @@ class StyleTransfer:
             # Compute tv loss statistic
             tv_h = convolve1d(avg_img, [-1, 1], axis=1)
             tv_v = convolve1d(avg_img, [-1, 1], axis=2)
-            tv_loss = 0.5 * np.sum((tv_h**2 + tv_v**2)) / avg_img.size
+            tv_loss = 0.5 * np.sum(tv_h**2 + tv_v**2) / avg_img.size
             print(tv_loss, file=log, flush=True)
 
             self.current_output = self.model.get_image(avg_img)
