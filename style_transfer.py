@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-"""Neural style transfer using Caffe. Implements http://arxiv.org/abs/1508.06576."""
+"""Neural style transfer using Caffe. Implements A Neural Algorithm of Artistic Style
+(http://arxiv.org/abs/1508.06576)."""
 
 # pylint: disable=invalid-name, too-many-arguments, too-many-instance-attributes, too-many-locals
 
@@ -34,7 +35,7 @@ EPS = np.finfo(np.float32).eps
 
 
 def normalize(arr):
-    """Normalizes an array to have mean 1."""
+    """Normalizes an array to have an L1 norm of 1."""
     return arr / (np.mean(np.abs(arr)) + EPS)
 
 
