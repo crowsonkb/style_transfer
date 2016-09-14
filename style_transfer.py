@@ -181,7 +181,8 @@ class Optimizer:
         self.g2 = optimizer.g2
         self.p1 = optimizer.p1
         self.step = optimizer.step
-        self.roll(-optimizer.xy)
+        self.xy = optimizer.xy.copy()
+        self.roll(-self.xy)
 
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
