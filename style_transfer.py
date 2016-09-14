@@ -184,6 +184,52 @@ class Optimizer:
         self.xy = optimizer.xy.copy()
         self.roll(-self.xy)
 
+
+class LBFGSOptimizer:
+    def __init__(self, params, step_size=1, n_updates=10):
+        self.params = params
+        self.p1 = params
+        self.step_size = step_size
+        self.n_updates = n_updates
+        self.prev_steps = []
+        self.diff_grads = []
+        self.last_grad = 0
+        self.step = 0
+
+    def update(self, grad):
+        direction = self.direction(grad)
+        step = self.step_size * direction
+        self.prev_steps.append(step)
+        self.diff_grads.append(grad - self.last_grad + step*0.01)
+        self.last_grad = grad
+        self.step += 1
+        print(self.step)
+        self.params += step
+        return self.params
+
+    def direction(self, grad):
+        direction = -grad
+        alphas = []
+        for i in range(1, min(self.step, self.n_updates)+1):
+            alphas.append(self.dot(self.prev_steps[self.step - i], direction) /
+                          self.dot(self.prev_steps[self.step - i], self.diff_grads[self.step - i]))
+            direction -= alphas[i-1] * self.diff_grads[self.step - i]
+        if self.step > 0 and self.n_updates > 0:
+            direction *= self.dot(self.prev_steps[self.step - 1], self.diff_grads[self.step - 1]) / \
+                self.dot(self.diff_grads[self.step - 1], self.diff_grads[self.step - 1])
+        for i in range(min(self.step, self.n_updates), 0, -1):
+            beta = self.dot(self.diff_grads[self.step - i], direction) / \
+                self.dot(self.diff_grads[self.step - i], self.prev_steps[self.step - i])
+            direction += (alphas[i-1] - beta) * self.prev_steps[self.step - i]
+        return direction
+
+    @staticmethod
+    def dot(x, y):
+        return np.dot(x.reshape(-1), y.reshape(-1))
+
+    def roll(self, xy):
+        pass
+
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
 SCGradRequest = namedtuple(
@@ -592,10 +638,10 @@ class StyleTransfer:
             self.optimizer.roll(-xy * jitter_scale)
 
             # Apply constraints
-            mean = self.model.mean.squeeze()
-            self.model.img[0] = np.clip(self.model.img[0], -mean[0], 255-mean[0])
-            self.model.img[1] = np.clip(self.model.img[1], -mean[1], 255-mean[1])
-            self.model.img[2] = np.clip(self.model.img[2], -mean[2], 255-mean[2])
+            # mean = self.model.mean.squeeze()
+            # self.model.img[0] = np.clip(self.model.img[0], -mean[0], 255-mean[0])
+            # self.model.img[1] = np.clip(self.model.img[1], -mean[1], 255-mean[1])
+            # self.model.img[2] = np.clip(self.model.img[2], -mean[2], 255-mean[2])
 
             # Compute update size statistic
             update_size = np.mean(np.abs(avg_img - old_img))
@@ -639,9 +685,7 @@ class StyleTransfer:
 
                 # make sure the optimizer's params array shares memory with self.model.img
                 # after preprocess_image is called later
-                self.optimizer = Optimizer(
-                    self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
-                    averaging_bias=ARGS.averaging_bias)
+                self.optimizer = LBFGSOptimizer(self.model.img, step_size=ARGS.step_size)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
