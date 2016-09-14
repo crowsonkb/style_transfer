@@ -186,11 +186,13 @@ class Optimizer:
 
 
 class LBFGSOptimizer:
-    def __init__(self, params, step_size=1, n_updates=10):
+    def __init__(self, params, step_size=1, n_updates=10, decay=1, lmbda=0.01):
         self.params = params
         self.p1 = params
         self.step_size = step_size
         self.n_updates = n_updates
+        self.decay = decay
+        self.lmbda = lmbda
         self.prev_steps = []
         self.diff_grads = []
         self.g1 = np.zeros_like(params)
@@ -198,10 +200,11 @@ class LBFGSOptimizer:
         self.step = 0
 
     def update(self, grad):
-        self.g1[:] = 0.9*self.g1 + 0.1*grad
-        step = self.step_size * self.direction(self.g1)
+        self.g1[:] = 0.5*self.g1 + 0.5*grad
+        ss = self.step_size / (1 + self.decay * self.step)
+        step = ss * self.direction(self.g1)
         self.prev_steps.append(step)
-        self.diff_grads.append(self.g1 - self.last_grad + step*0.01)
+        self.diff_grads.append(self.g1 - self.last_grad + step * self.lmbda)
         self.last_grad = self.g1
         self.step += 1
         print(self.step)
