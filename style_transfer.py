@@ -193,15 +193,16 @@ class LBFGSOptimizer:
         self.n_updates = n_updates
         self.prev_steps = []
         self.diff_grads = []
+        self.g1 = np.zeros_like(params)
         self.last_grad = 0
         self.step = 0
 
     def update(self, grad):
-        direction = self.direction(grad)
-        step = self.step_size * direction
+        self.g1[:] = 0.9*self.g1 + 0.1*grad
+        step = self.step_size * self.direction(self.g1)
         self.prev_steps.append(step)
-        self.diff_grads.append(grad - self.last_grad + step*0.01)
-        self.last_grad = grad
+        self.diff_grads.append(self.g1 - self.last_grad + step*0.01)
+        self.last_grad = self.g1
         self.step += 1
         print(self.step)
         self.params += step
