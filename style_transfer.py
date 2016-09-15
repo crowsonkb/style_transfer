@@ -120,7 +120,7 @@ class LayerIndexer:
 
 class Optimizer:
     """Implements the Adam gradient descent optimizer with Polyak-Ruppert averaging."""
-    def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, damping=0.05,
+    def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, damping=0.02,
                  update_d_every=10):
         """Initializes the optimizer."""
         self.params = params
@@ -141,19 +141,21 @@ class Optimizer:
     def update(self, eval_grad):
         """Returns a step's parameter update given its gradient."""
         grad = eval_grad(self.params)
+        self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
+        g1_hat = self.g1/(1-self.b1**(self.step+1))
+
         if self.step % self.update_d_every == 0:
             v = np.random.normal(size=self.params.shape)
-            hv = eval_grad(self.params + v) - grad
+            fd_step = np.mean(np.abs(g1_hat))
+            hv = (eval_grad(self.params + fd_step * v) - grad) / fd_step
             self.d += hv**2
             self.d_step += 1
 
-        self.step += 1
-        self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
-        g1_hat = self.g1/(1-self.b1**self.step)
         print(np.mean(np.sqrt(self.d / self.d_step)))
         self.params -= self.step_size * g1_hat / (np.sqrt(self.d / self.d_step) + self.damping)
 
         # Polyak-Ruppert averaging
+        self.step += 1
         weight = (1+self.avg_bias) / (self.step+self.avg_bias)
         self.p1[:] = (1-weight)*self.p1 + weight*self.params
         if self.averaging:
@@ -790,7 +792,7 @@ def parse_args():
     parser.add_argument(
         '--iterations', '-i', nargs='+', type=int, default=[300], help='the number of iterations')
     parser.add_argument(
-        '--step-size', '-st', type=ffloat, default=15, help='the step size (iteration magnitude)')
+        '--step-size', '-st', type=ffloat, default=1, help='the step size (iteration magnitude)')
     parser.add_argument(
         '--size', '-s', nargs='+', type=int, default=[256], help='the output size(s)')
     parser.add_argument(
