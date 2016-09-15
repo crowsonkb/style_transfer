@@ -120,7 +120,8 @@ class LayerIndexer:
 
 class Optimizer:
     """Implements the Adam gradient descent optimizer with Polyak-Ruppert averaging."""
-    def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, b2=0.999):
+    def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, damping=0.1,
+                 update_d_every=10):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
@@ -128,23 +129,29 @@ class Optimizer:
         assert averaging_bias >= 0
         self.avg_bias = averaging_bias
         self.b1 = b1
-        self.b2 = b2
+        self.damping = damping
+        self.update_d_every = update_d_every
         self.step = 0
+        self.d_step = 0
         self.xy = np.zeros(2, dtype=np.int32)
+        self.d = np.zeros_like(params)
         self.g1 = np.zeros_like(params)
-        self.g2 = np.zeros_like(params)
         self.p1 = params.copy()
 
-    def update(self, grad):
+    def update(self, eval_grad):
         """Returns a step's parameter update given its gradient."""
-        self.step += 1
+        grad = eval_grad(self.params)
+        if self.step % self.update_d_every == 0:
+            v = np.random.uniform(size=self.params.shape)
+            hv = eval_grad(self.params + v) - grad
+            self.d += hv**2
+            self.d_step += 1
 
-        # Adam
+        self.step += 1
         self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
-        self.g2[:] = self.b2*self.g2 + (1-self.b2)*grad**2
         g1_hat = self.g1/(1-self.b1**self.step)
-        g2_hat = self.g2/(1-self.b2**self.step)
-        self.params -= self.step_size * g1_hat / (np.sqrt(g2_hat) + EPS)
+        print(np.mean(np.sqrt(self.d / self.d_step)))
+        self.params -= self.step_size * g1_hat / (np.sqrt(self.d / self.d_step) + self.damping)
 
         # Polyak-Ruppert averaging
         weight = (1+self.avg_bias) / (self.step+self.avg_bias)
@@ -157,8 +164,8 @@ class Optimizer:
     def roll(self, xy):
         """Rolls the optimizer's internal state."""
         self.xy += xy
+        self.d[:] = roll2(self.d, xy)
         self.g1[:] = roll2(self.g1, xy)
-        self.g2[:] = roll2(self.g2, xy)
         self.p1[:] = roll2(self.p1, xy)
 
     def set_params(self, last_iterate):
@@ -170,15 +177,15 @@ class Optimizer:
         self.step = 0
         self.params = last_iterate
         hw = self.params.shape[-2:]
+        self.d = resize(self.d, hw, Image.NEAREST)
         self.g1 = resize(self.g1, hw)
-        self.g2 = resize(self.g2, hw, Image.NEAREST)
         self.p1 = resize(self.p1, hw)
 
     def restore_state(self, optimizer):
         """Given an Optimizer instance, restores internal state from it."""
         self.params = optimizer.params
+        self.d = optimizer.d
         self.g1 = optimizer.g1
-        self.g2 = optimizer.g2
         self.p1 = optimizer.p1
         self.step = optimizer.step
         self.xy = optimizer.xy.copy()
@@ -564,28 +571,30 @@ class StyleTransfer:
             self.model.roll(xy, jitter_scale=jitter_scale)
             self.optimizer.roll(xy * jitter_scale)
 
-            # Compute style+content gradient
-            grad = self.model.eval_sc_grad(self.pool, xy * jitter_scale, ARGS.content_layers,
-                                           ARGS.style_layers, content_weight, style_weight,
-                                           tile_size=ARGS.tile_size)
+            def eval_grad(params):
+                self.model.img = params
+                # Compute style+content gradient
+                grad = self.model.eval_sc_grad(self.pool, xy * jitter_scale, ARGS.content_layers,
+                                               ARGS.style_layers, content_weight, style_weight,
+                                               tile_size=ARGS.tile_size)
 
-            # Compute total variation gradient
-            tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
-            tv_grad = convolve(self.model.img, tv_kernel, mode='wrap')/255
+                # Compute total variation gradient
+                tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
+                tv_grad = convolve(self.model.img, tv_kernel, mode='wrap')/255
 
-            # Selectively blur edges more to obscure jitter and tile seams
-            tv_mask = np.ones_like(tv_grad)
-            tv_mask[:, :2, :] = 5
-            tv_mask[:, -2:, :] = 5
-            tv_mask[:, :, :2] = 5
-            tv_mask[:, :, -2:] = 5
-            tv_grad *= tv_mask
+                # Selectively blur edges more to obscure jitter and tile seams
+                tv_mask = np.ones_like(tv_grad)
+                tv_mask[:, :2, :] = 5
+                tv_mask[:, -2:, :] = 5
+                tv_mask[:, :, :2] = 5
+                tv_mask[:, :, -2:] = 5
+                tv_grad *= tv_mask
 
-            # Compute a weighted sum of normalized gradients
-            grad = normalize(grad) + ARGS.tv_weight*tv_grad
+                # Compute a weighted sum of normalized gradients
+                return normalize(grad) + ARGS.tv_weight*tv_grad
 
             # In-place gradient descent update
-            avg_img = self.optimizer.update(grad)
+            avg_img = self.optimizer.update(eval_grad)
 
             # Backward jitter
             self.model.roll(-xy, jitter_scale=jitter_scale)
