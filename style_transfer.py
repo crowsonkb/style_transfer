@@ -120,7 +120,7 @@ class LayerIndexer:
 
 class Optimizer:
     """Implements the Adam gradient descent optimizer with Polyak-Ruppert averaging."""
-    def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, damping=0.1,
+    def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, damping=0.05,
                  update_d_every=10):
         """Initializes the optimizer."""
         self.params = params
@@ -142,7 +142,7 @@ class Optimizer:
         """Returns a step's parameter update given its gradient."""
         grad = eval_grad(self.params)
         if self.step % self.update_d_every == 0:
-            v = np.random.uniform(size=self.params.shape)
+            v = np.random.normal(size=self.params.shape)
             hv = eval_grad(self.params + v) - grad
             self.d += hv**2
             self.d_step += 1
