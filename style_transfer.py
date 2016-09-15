@@ -789,7 +789,7 @@ def parse_args():
     parser.add_argument(
         '--content-weight', '-cw', type=ffloat, default=0.05, help='the content image factor')
     parser.add_argument(
-        '--tv-weight', '-tw', type=ffloat, default=0.5, help='the smoothing factor')
+        '--tv-weight', '-tw', type=ffloat, default=1, help='the smoothing factor')
     parser.add_argument(
         '--no-averaging', default=False, action='store_true',
         help='disable averaging of successive iterates')
