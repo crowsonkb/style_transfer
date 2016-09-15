@@ -120,8 +120,8 @@ class LayerIndexer:
 
 class Optimizer:
     """Implements the ESGD gradient descent optimizer with Polyak-Ruppert averaging."""
-    def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, damping=0.02,
-                 update_d_every=10):
+    def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, b2=0.9,
+                 damping=0.01, update_d_every=10):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
@@ -129,6 +129,7 @@ class Optimizer:
         assert averaging_bias >= 0
         self.avg_bias = averaging_bias
         self.b1 = b1
+        self.b2 = b2
         self.damping = damping
         self.update_d_every = update_d_every
         self.step = 0
@@ -148,11 +149,12 @@ class Optimizer:
             v = np.random.normal(size=self.params.shape)
             fd_step = np.mean(np.abs(g1_hat))
             hv = (eval_grad(self.params + fd_step * v) - grad) / fd_step
-            self.d += hv**2
+            self.d[:] = self.b2*self.d + (1-self.b2)*hv**2
             self.d_step += 1
 
-        print(np.mean(np.sqrt(self.d / self.d_step)))
-        self.params -= self.step_size * g1_hat / (np.sqrt(self.d / self.d_step) + self.damping)
+        d_hat = self.d/(1-self.b2**self.d_step)
+        # print(np.mean(np.sqrt(d_hat)))
+        self.params -= self.step_size * g1_hat / (np.sqrt(d_hat) + self.damping)
 
         # Polyak-Ruppert averaging
         self.step += 1
