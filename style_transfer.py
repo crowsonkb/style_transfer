@@ -119,7 +119,7 @@ class LayerIndexer:
 
 
 class Optimizer:
-    """Implements the Adam gradient descent optimizer with Polyak-Ruppert averaging."""
+    """Implements the ESGD gradient descent optimizer with Polyak-Ruppert averaging."""
     def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, damping=0.02,
                  update_d_every=10):
         """Initializes the optimizer."""
