@@ -158,8 +158,9 @@ class Optimizer:
                 self.d_step += 1
 
         d_hat = self.d/(1-self.b2**self.d_step)
-        # print('mean ss:', np.mean(1 / (np.sqrt(d_hat) + self.damping)))
-        self.params -= self.step_size * g1_hat / (np.sqrt(d_hat) + self.damping)
+        ss = self.step_size / (np.sqrt(d_hat) + self.damping)
+        print('mean ss:', np.mean(ss))
+        self.params -= ss * g1_hat
 
         # Polyak-Ruppert averaging
         weight = 1 / self.step
