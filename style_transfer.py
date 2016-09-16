@@ -121,7 +121,7 @@ class LayerIndexer:
 class Optimizer:
     """Implements the ESGD gradient descent optimizer with Polyak-Ruppert averaging."""
     def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, b2=0.9,
-                 damping=1e-4, update_d_every=10, initial_d_updates=10):
+                 damping=1e-4, update_d_every=10, initial_d_steps=10):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
@@ -132,7 +132,7 @@ class Optimizer:
         self.b2 = b2
         self.damping = damping
         self.update_d_every = update_d_every
-        self.initial_d_updates = initial_d_updates
+        self.initial_d_steps = initial_d_steps
         self.step = 0
         self.d_step = 0
         self.xy = np.zeros(2, dtype=np.int32)
@@ -149,7 +149,7 @@ class Optimizer:
         if self.step % self.update_d_every == 0:
             ntimes = 1
             if self.step == 0:
-                ntimes = self.initial_d_updates
+                ntimes = self.initial_d_steps
             fd_step = np.sqrt(np.mean(g1_hat**2))
             for _ in range(ntimes):
                 v = np.random.normal(size=self.params.shape)
