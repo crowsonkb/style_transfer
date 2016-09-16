@@ -186,7 +186,7 @@ class Optimizer:
 
 
 class LBFGSOptimizer:
-    def __init__(self, params, step_size=1, n_updates=10, momentum=0, decay=0, lmbda=0.001):
+    def __init__(self, params, step_size=1, n_updates=10, momentum=0, decay=0, lmbda=1/100):
         self.params = params
         self.p1 = params
         self.step_size = step_size
@@ -204,36 +204,40 @@ class LBFGSOptimizer:
         self.g1 = self.momentum*self.g1 + (1-self.momentum)*grad
         grad = self.g1/(1-self.momentum**(self.step+1))
         ss = self.step_size / (1 + self.decay * self.step)
-        step = ss * -self.direction(grad)
+        step = -ss * self.inv_hv(grad)
         self.prev_steps.append(np.abs(step))
         self.diff_grads.append(np.abs(grad - self.last_grad) + self.lmbda*np.abs(step))
         self.last_grad = grad
         self.step += 1
-        # n_step = np.mean(np.abs(step))
-        # if n_step > 10:
-        #     step *= 10 / n_step
         self.params += step
         return self.params
 
-    def direction(self, grad):
-        direction = grad.copy()
+    def inv_hv(self, v):
+        v = v.copy()
         alphas = []
-        for i in range(1, min(self.step, self.n_updates)+1):
-            alphas.append(self.dot(self.prev_steps[self.step - i], direction) /
-                          self.dot(self.prev_steps[self.step - i], self.diff_grads[self.step - i]))
-            direction -= alphas[i-1] * self.diff_grads[self.step - i]
-        if self.step > 0 and self.n_updates > 0:
-            direction *= self.dot(self.prev_steps[self.step - 1], self.diff_grads[self.step - 1]) / \
-                self.dot(self.diff_grads[self.step - 1], self.diff_grads[self.step - 1])
-        for i in range(min(self.step, self.n_updates), 0, -1):
-            beta = self.dot(self.diff_grads[self.step - i], direction) / \
-                self.dot(self.diff_grads[self.step - i], self.prev_steps[self.step - i])
-            direction += (alphas[i-1] - beta) * self.prev_steps[self.step - i]
-        return direction
+        updates = min(self.step, self.n_updates)
 
-    @staticmethod
-    def dot(x, y):
-        return np.dot(x.reshape(-1), y.reshape(-1))
+        for i in range(1, updates+1):
+            s = self.prev_steps[self.step - i]
+            y = self.diff_grads[self.step - i]
+            alphas.append(np.sum(s * v) / np.sum(s * y))
+            v -= alphas[i-1] * y
+
+        total = np.zeros_like(v)
+        for i in range(1, updates+1):
+            s = self.prev_steps[self.step - i]
+            y = self.diff_grads[self.step - i]
+            total += np.sum(s * y) / np.sum(y * y)
+        if updates > 0:
+            v *= total / updates
+
+        for i in range(updates, 0, -1):
+            s = self.prev_steps[self.step - i]
+            y = self.diff_grads[self.step - i]
+            beta = np.sum(y * v) / np.sum(y * s)
+            v += (alphas[i-1] - beta) * s
+
+        return v
 
     def roll(self, xy):
         pass
