@@ -203,11 +203,11 @@ class LBFGSOptimizer:
     def update(self, grad):
         self.g1 = self.momentum*self.g1 + (1-self.momentum)*grad
         grad = self.g1/(1-self.momentum**(self.step+1))
-        step = -self.inv_hv(grad)
+        ss = self.step_size / (1 + self.decay * self.step)
+        step = -ss * self.inv_hv(grad)
         self.prev_steps.append(np.abs(step))
         self.diff_grads.append(np.abs(grad - self.last_grad) + self.lmbda*np.abs(step))
         self.last_grad = grad
-        ss = self.step_size / (1 + self.decay * self.step)
         self.step += 1
         self.params += ss * step
         return self.params
@@ -217,7 +217,7 @@ class LBFGSOptimizer:
         alphas = []
         updates = min(self.step, self.n_updates)
 
-        total = np.zeros_like(v)
+        total = 0
         for i in range(1, updates+1):
             s = self.prev_steps[self.step - i]
             y = self.diff_grads[self.step - i]
