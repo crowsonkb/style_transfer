@@ -120,14 +120,12 @@ class LayerIndexer:
 
 class Optimizer:
     """Implements the ESGD gradient descent optimizer with Polyak-Ruppert averaging."""
-    def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, b2=0.9,
-                 damping=1e-4, update_d_every=10, initial_d_steps=10):
+    def __init__(self, params, step_size=1, averaging=True, b1=0.9, b2=0.9, damping=1e-4,
+                 update_d_every=10, initial_d_steps=10):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
         self.averaging = averaging
-        assert averaging_bias >= 0
-        self.avg_bias = averaging_bias
         self.b1 = b1
         self.b2 = b2
         self.damping = damping
@@ -142,13 +140,15 @@ class Optimizer:
 
     def update(self, eval_grad):
         """Returns a step's parameter update given its gradient."""
+        self.step += 1
+
         grad = eval_grad(self.params)
         self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
-        g1_hat = self.g1/(1-self.b1**(self.step+1))
+        g1_hat = self.g1/(1-self.b1**self.step)
 
-        if self.step % self.update_d_every == 0:
+        if (self.step-1) % self.update_d_every == 0:
             ntimes = 1
-            if self.step == 0:
+            if self.step == 1:
                 ntimes = self.initial_d_steps
             fd_step = np.sqrt(np.mean(g1_hat**2))
             for _ in range(ntimes):
@@ -162,8 +162,7 @@ class Optimizer:
         self.params -= self.step_size * g1_hat / (np.sqrt(d_hat) + self.damping)
 
         # Polyak-Ruppert averaging
-        self.step += 1
-        weight = (1+self.avg_bias) / (self.step+self.avg_bias)
+        weight = 1 / self.step
         self.p1[:] = (1-weight)*self.p1 + weight*self.params
         if self.averaging:
             return self.p1
@@ -660,8 +659,7 @@ class StyleTransfer:
                 # make sure the optimizer's params array shares memory with self.model.img
                 # after preprocess_image is called later
                 self.optimizer = Optimizer(
-                    self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
-                    averaging_bias=ARGS.averaging_bias)
+                    self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
@@ -813,10 +811,6 @@ def parse_args():
     parser.add_argument(
         '--no-averaging', default=False, action='store_true',
         help='disable averaging of successive iterates')
-    parser.add_argument(
-        '--averaging-bias', type=ffloat, default=0,
-        help='bias averaging of successive iterates toward the present. '
-        '0 = simple average, 1 = triangle window shape, etc.')
     parser.add_argument(
         '--content-layers', nargs='*', default=['conv4_2'],
         metavar='LAYER', help='the layers to use for content')
