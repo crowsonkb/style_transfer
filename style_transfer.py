@@ -186,13 +186,13 @@ class Optimizer:
 
 
 class LBFGSOptimizer:
-    def __init__(self, params, step_size=1, n_updates=10, decay=1, lmbda=0.01):
+    def __init__(self, params, step_size=1, n_updates=10, momentum=0.5, decay=0.02):
         self.params = params
         self.p1 = params
         self.step_size = step_size
         self.n_updates = n_updates
+        self.momentum = momentum
         self.decay = decay
-        self.lmbda = lmbda
         self.prev_steps = []
         self.diff_grads = []
         self.g1 = np.zeros_like(params)
@@ -200,19 +200,23 @@ class LBFGSOptimizer:
         self.step = 0
 
     def update(self, grad):
-        self.g1[:] = 0.5*self.g1 + 0.5*grad
+        self.g1 = self.momentum*self.g1 + (1-self.momentum)*grad
+        grad = self.g1/(1-self.momentum**(self.step+1))
         ss = self.step_size / (1 + self.decay * self.step)
-        step = ss * self.direction(self.g1)
-        self.prev_steps.append(step)
-        self.diff_grads.append(self.g1 - self.last_grad + step * self.lmbda)
-        self.last_grad = self.g1
+        step = ss * -self.direction(grad)
+        self.prev_steps.append(np.abs(step))
+        self.diff_grads.append(np.abs(grad - self.last_grad))
+        self.last_grad = grad
         self.step += 1
         print(self.step)
+        n_step = np.mean(np.abs(step))
+        if n_step > 10:
+            step *= 10 / n_step
         self.params += step
         return self.params
 
     def direction(self, grad):
-        direction = -grad
+        direction = grad.copy()
         alphas = []
         for i in range(1, min(self.step, self.n_updates)+1):
             alphas.append(self.dot(self.prev_steps[self.step - i], direction) /
@@ -829,7 +833,7 @@ def parse_args():
     parser.add_argument(
         '--iterations', '-i', nargs='+', type=int, default=[300], help='the number of iterations')
     parser.add_argument(
-        '--step-size', '-st', type=ffloat, default=15, help='the step size (iteration magnitude)')
+        '--step-size', '-st', type=ffloat, default=1, help='the step size (iteration magnitude)')
     parser.add_argument(
         '--size', '-s', nargs='+', type=int, default=[256], help='the output size(s)')
     parser.add_argument(
@@ -837,7 +841,7 @@ def parse_args():
     parser.add_argument(
         '--content-weight', '-cw', type=ffloat, default=0.05, help='the content image factor')
     parser.add_argument(
-        '--tv-weight', '-tw', type=ffloat, default=0.5, help='the smoothing factor')
+        '--tv-weight', '-tw', type=ffloat, default=1, help='the smoothing factor')
     parser.add_argument(
         '--no-averaging', default=False, action='store_true',
         help='disable averaging of successive iterates')
