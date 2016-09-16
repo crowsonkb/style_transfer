@@ -120,13 +120,11 @@ class LayerIndexer:
 
 class Optimizer:
     """Implements the Adam gradient descent optimizer with Polyak-Ruppert averaging."""
-    def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, b2=0.999):
+    def __init__(self, params, step_size=1, averaging=True, b1=0.9, b2=0.999):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
         self.averaging = averaging
-        assert averaging_bias >= 0
-        self.avg_bias = averaging_bias
         self.b1 = b1
         self.b2 = b2
         self.step = 0
@@ -147,7 +145,7 @@ class Optimizer:
         self.params -= self.step_size * g1_hat / (np.sqrt(g2_hat) + EPS)
 
         # Polyak-Ruppert averaging
-        weight = (1+self.avg_bias) / (self.step+self.avg_bias)
+        weight = 1 / self.step
         self.p1[:] = (1-weight)*self.p1 + weight*self.params
         if self.averaging:
             return self.p1
@@ -640,8 +638,7 @@ class StyleTransfer:
                 # make sure the optimizer's params array shares memory with self.model.img
                 # after preprocess_image is called later
                 self.optimizer = Optimizer(
-                    self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
-                    averaging_bias=ARGS.averaging_bias)
+                    self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
@@ -793,10 +790,6 @@ def parse_args():
     parser.add_argument(
         '--no-averaging', default=False, action='store_true',
         help='disable averaging of successive iterates')
-    parser.add_argument(
-        '--averaging-bias', type=ffloat, default=0,
-        help='bias averaging of successive iterates toward the present. '
-        '0 = simple average, 1 = triangle window shape, etc.')
     parser.add_argument(
         '--content-layers', nargs='*', default=['conv4_2'],
         metavar='LAYER', help='the layers to use for content')
