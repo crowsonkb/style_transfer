@@ -121,7 +121,7 @@ class LayerIndexer:
 class Optimizer:
     """Implements the ESGD gradient descent optimizer with Polyak-Ruppert averaging."""
     def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, b2=0.9,
-                 damping=0.01, update_d_every=10):
+                 damping=1e-4, update_d_every=10, initial_d_updates=10):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
@@ -132,6 +132,7 @@ class Optimizer:
         self.b2 = b2
         self.damping = damping
         self.update_d_every = update_d_every
+        self.initial_d_updates = initial_d_updates
         self.step = 0
         self.d_step = 0
         self.xy = np.zeros(2, dtype=np.int32)
@@ -146,14 +147,18 @@ class Optimizer:
         g1_hat = self.g1/(1-self.b1**(self.step+1))
 
         if self.step % self.update_d_every == 0:
-            v = np.random.normal(size=self.params.shape)
+            ntimes = 1
+            if self.step == 0:
+                ntimes = self.initial_d_updates
             fd_step = np.mean(np.abs(g1_hat))
-            hv = (eval_grad(self.params + fd_step * v) - grad) / fd_step
-            self.d[:] = self.b2*self.d + (1-self.b2)*hv**2
-            self.d_step += 1
+            for _ in range(ntimes):
+                v = np.random.normal(size=self.params.shape)
+                hv = (eval_grad(self.params + fd_step * v) - grad) / fd_step
+                self.d[:] = self.b2*self.d + (1-self.b2)*hv**2
+                self.d_step += 1
 
         d_hat = self.d/(1-self.b2**self.d_step)
-        # print(np.mean(np.sqrt(d_hat)))
+        # print('mean ss:', np.mean(1 / (np.sqrt(d_hat) + self.damping)))
         self.params -= self.step_size * g1_hat / (np.sqrt(d_hat) + self.damping)
 
         # Polyak-Ruppert averaging
@@ -176,9 +181,10 @@ class Optimizer:
         """Sets params to the supplied array (a possibly-resized or altered last non-averaged
         iterate), resampling the optimizer's internal state if the shape has changed."""
         # P-R averaging should only average over the current scale. For some reason the result
-        # looks better if Adam is provided with an incorrect step number for its resampled internal
-        # state.
+        # looks better if the optimizer is provided with incorrect step numbers for its resampled
+        # internal state.
         self.step = 0
+        self.d_step = 0
         self.params = last_iterate
         hw = self.params.shape[-2:]
         self.d = resize(self.d, hw, Image.NEAREST)
@@ -192,6 +198,7 @@ class Optimizer:
         self.g1 = optimizer.g1
         self.p1 = optimizer.p1
         self.step = optimizer.step
+        self.d_step = optimizer.d_step
         self.xy = optimizer.xy.copy()
         self.roll(-self.xy)
 
