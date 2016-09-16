@@ -150,7 +150,7 @@ class Optimizer:
             ntimes = 1
             if self.step == 0:
                 ntimes = self.initial_d_updates
-            fd_step = np.mean(np.abs(g1_hat))
+            fd_step = np.sqrt(np.mean(g1_hat**2))
             for _ in range(ntimes):
                 v = np.random.normal(size=self.params.shape)
                 hv = (eval_grad(self.params + fd_step * v) - grad) / fd_step
