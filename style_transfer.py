@@ -146,6 +146,7 @@ class Optimizer:
         self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
         g1_hat = self.g1/(1-self.b1**self.step)
 
+        # Update the diagonal preconditioner
         if (self.step-1) % self.d_step_every == 0:
             ntimes = 1
             if self.step == 1:
