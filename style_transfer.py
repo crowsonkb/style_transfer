@@ -213,6 +213,7 @@ class LBFGSOptimizer:
         return self.params
 
     def inv_hv(self, v):
+        """Computes the product of an approximation of the inverse Hessian with a vector v."""
         v = v.copy()
         alphas = []
         updates = min(self.step, self.n_updates)
