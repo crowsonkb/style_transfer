@@ -118,7 +118,7 @@ class LayerIndexer:
         getattr(self.net.blobs[key], self.attr)[0] = value
 
 
-class Optimizer:
+class AdagradOptimizer:
     """Implements the Adam gradient descent optimizer with Polyak-Ruppert averaging."""
     def __init__(self, params, step_size=1, averaging=True, averaging_bias=0, b1=0.9, b2=0.999):
         """Initializes the optimizer."""
@@ -139,12 +139,11 @@ class Optimizer:
         """Returns a step's parameter update given its gradient."""
         self.step += 1
 
-        # Adam
-        self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
-        self.g2[:] = self.b2*self.g2 + (1-self.b2)*grad**2
-        g1_hat = self.g1/(1-self.b1**self.step)
-        g2_hat = self.g2/(1-self.b2**self.step)
-        self.params -= self.step_size * g1_hat / (np.sqrt(g2_hat) + EPS)
+        # Adagrad
+        # self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
+        # g1_hat = self.g1/(1-self.b1**self.step)
+        self.g2 += grad**2
+        self.params -= self.step_size * grad / (np.sqrt(self.g2) + EPS)
 
         # Polyak-Ruppert averaging
         weight = (1+self.avg_bias) / (self.step+self.avg_bias)
@@ -185,31 +184,32 @@ class Optimizer:
         self.roll(-self.xy)
 
 
-class LBFGSOptimizer:
-    def __init__(self, params, step_size=1, n_updates=10, momentum=0, decay=0, lmbda=1/100):
+class AdaQNOptimizer:
+    def __init__(self, params, step_size=1, n_updates=10):
         self.params = params
         self.p1 = params
         self.step_size = step_size
         self.n_updates = n_updates
-        self.momentum = momentum
-        self.decay = decay
-        self.lmbda = lmbda
+        self.prev_grads = []
         self.prev_steps = []
         self.diff_grads = []
-        self.g1 = np.zeros_like(params)
-        self.last_grad = 0
+        self.g2 = np.zeros_like(params)
         self.step = 0
 
     def update(self, grad):
-        self.g1 = self.momentum*self.g1 + (1-self.momentum)*grad
-        grad = self.g1/(1-self.momentum**(self.step+1))
-        ss = self.step_size / (1 + self.decay * self.step)
-        step = -ss * self.inv_hv(grad)
+        self.g2 += grad**2
+        step = -self.step_size * self.inv_hv(grad)
+        self.params += step
+        self.prev_grads.append(grad)
+
+        y = np.zeros_like(step)
+        for f in self.prev_grads:
+            y += f * np.sum(f * step)
+        y /= len(self.prev_grads)
         self.prev_steps.append(np.abs(step))
-        self.diff_grads.append(np.abs(grad - self.last_grad) + self.lmbda*np.abs(step))
-        self.last_grad = grad
+        self.diff_grads.append(np.abs(y))
         self.step += 1
-        self.params += ss * step
+
         return self.params
 
     def inv_hv(self, v):
@@ -218,15 +218,13 @@ class LBFGSOptimizer:
         alphas = []
         updates = min(self.step, self.n_updates)
 
-        total = 0
         for i in range(1, updates+1):
             s = self.prev_steps[self.step - i]
             y = self.diff_grads[self.step - i]
             alphas.append(np.sum(s * v) / (np.sum(s * y) + EPS))
-            total += np.sum(s * y) / (np.sum(y * y) + EPS)
             v -= alphas[i-1] * y
-        if updates > 0:
-            v *= total / updates
+
+        v /= np.sqrt(self.g2) + EPS
 
         for i in range(updates, 0, -1):
             s = self.prev_steps[self.step - i]
@@ -694,7 +692,7 @@ class StyleTransfer:
 
                 # make sure the optimizer's params array shares memory with self.model.img
                 # after preprocess_image is called later
-                self.optimizer = LBFGSOptimizer(self.model.img, step_size=ARGS.step_size)
+                self.optimizer = AdaQNOptimizer(self.model.img, step_size=ARGS.step_size, averaging=False)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
