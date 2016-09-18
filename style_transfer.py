@@ -222,8 +222,8 @@ class LBFGSOptimizer:
         for i in range(1, updates+1):
             s = self.prev_steps[self.step - i]
             y = self.diff_grads[self.step - i]
-            alphas.append(np.sum(s * v) / np.sum(s * y))
-            total += np.sum(s * y) / np.sum(y * y)
+            alphas.append(np.sum(s * v) / (np.sum(s * y) + EPS))
+            total += np.sum(s * y) / (np.sum(y * y) + EPS)
             v -= alphas[i-1] * y
         if updates > 0:
             v *= total / updates
@@ -231,7 +231,7 @@ class LBFGSOptimizer:
         for i in range(updates, 0, -1):
             s = self.prev_steps[self.step - i]
             y = self.diff_grads[self.step - i]
-            beta = np.sum(y * v) / np.sum(y * s)
+            beta = np.sum(y * v) / (np.sum(y * s) + EPS)
             v += (alphas[i-1] - beta) * s
 
         return v
