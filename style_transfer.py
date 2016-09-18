@@ -185,29 +185,23 @@ class Optimizer:
         self.roll(-self.xy)
 
 
-class LBFGSOptimizer:
-    def __init__(self, params, step_size=1, n_updates=10, momentum=0, decay=0, lmbda=1/100):
+class SQNOptimizer:
+    def __init__(self, params, step_size=1, n_updates=10, decay=0.05):
         self.params = params
-        self.p1 = params
         self.step_size = step_size
         self.n_updates = n_updates
-        self.momentum = momentum
         self.decay = decay
-        self.lmbda = lmbda
         self.prev_steps = []
         self.diff_grads = []
-        self.g1 = np.zeros_like(params)
-        self.last_grad = 0
         self.step = 0
 
-    def update(self, grad):
-        self.g1 = self.momentum*self.g1 + (1-self.momentum)*grad
-        grad = self.g1/(1-self.momentum**(self.step+1))
+    def update(self, eval_grad):
+        grad = eval_grad(self.params)
         ss = self.step_size / (1 + self.decay * self.step)
         step = -ss * self.inv_hv(grad)
-        self.prev_steps.append(np.abs(step))
-        self.diff_grads.append(np.abs(grad - self.last_grad) + self.lmbda*np.abs(step))
-        self.last_grad = grad
+        self.prev_steps.append(step)
+        y = eval_grad(self.params + step) - grad
+        self.diff_grads.append(y)
         self.step += 1
         self.params += step
         return self.params
@@ -218,15 +212,16 @@ class LBFGSOptimizer:
         alphas = []
         updates = min(self.step, self.n_updates)
 
-        total = 0
         for i in range(1, updates+1):
             s = self.prev_steps[self.step - i]
             y = self.diff_grads[self.step - i]
             alphas.append(np.sum(s * v) / (np.sum(s * y) + EPS))
-            total += np.sum(s * y) / (np.sum(y * y) + EPS)
             v -= alphas[i-1] * y
+
         if updates > 0:
-            v *= total / updates
+            s = self.prev_steps[self.step - 1]
+            y = self.diff_grads[self.step - 1]
+            v *= np.sum(s * y) / (np.sum(y * y) + EPS)
 
         for i in range(updates, 0, -1):
             s = self.prev_steps[self.step - i]
@@ -603,7 +598,7 @@ class StyleTransfer:
         self.pool.set_features_and_grams(self.model.features, self.model.grams)
         self.model.img = params
 
-        old_img = self.optimizer.p1.copy()
+        old_img = params.copy()
         self.step += 1
         log = open('log.csv', 'w')
         print('tv loss', file=log, flush=True)
@@ -619,38 +614,41 @@ class StyleTransfer:
             self.model.roll(xy, jitter_scale=jitter_scale)
             self.optimizer.roll(xy * jitter_scale)
 
-            # Compute style+content gradient
-            grad = self.model.eval_sc_grad(self.pool, xy * jitter_scale, ARGS.content_layers,
-                                           ARGS.style_layers, content_weight, style_weight,
-                                           tile_size=ARGS.tile_size)
+            def eval_grad(params):
+                self.model.img = params
 
-            # Compute total variation gradient
-            tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
-            tv_grad = convolve(self.model.img, tv_kernel, mode='wrap')/255
+                # Compute style+content gradient
+                grad = self.model.eval_sc_grad(self.pool, xy * jitter_scale, ARGS.content_layers,
+                                               ARGS.style_layers, content_weight, style_weight,
+                                               tile_size=ARGS.tile_size)
 
-            # Selectively blur edges more to obscure jitter and tile seams
-            tv_mask = np.ones_like(tv_grad)
-            tv_mask[:, :2, :] = 5
-            tv_mask[:, -2:, :] = 5
-            tv_mask[:, :, :2] = 5
-            tv_mask[:, :, -2:] = 5
-            tv_grad *= tv_mask
+                # Compute total variation gradient
+                tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
+                tv_grad = convolve(self.model.img, tv_kernel, mode='wrap')/255
 
-            # Compute a weighted sum of normalized gradients
-            grad = normalize(grad) + ARGS.tv_weight*tv_grad
+                # Selectively blur edges more to obscure jitter and tile seams
+                tv_mask = np.ones_like(tv_grad)
+                tv_mask[:, :2, :] = 5
+                tv_mask[:, -2:, :] = 5
+                tv_mask[:, :, :2] = 5
+                tv_mask[:, :, -2:] = 5
+                tv_grad *= tv_mask
+
+                # Compute a weighted sum of normalized gradients
+                return normalize(grad) + ARGS.tv_weight*tv_grad
 
             # In-place gradient descent update
-            avg_img = self.optimizer.update(grad)
+            avg_img = self.optimizer.update(eval_grad)
 
             # Backward jitter
             self.model.roll(-xy, jitter_scale=jitter_scale)
             self.optimizer.roll(-xy * jitter_scale)
 
             # Apply constraints
-            # mean = self.model.mean.squeeze()
-            # self.model.img[0] = np.clip(self.model.img[0], -mean[0], 255-mean[0])
-            # self.model.img[1] = np.clip(self.model.img[1], -mean[1], 255-mean[1])
-            # self.model.img[2] = np.clip(self.model.img[2], -mean[2], 255-mean[2])
+            mean = self.model.mean.squeeze()
+            self.model.img[0] = np.clip(self.model.img[0], -mean[0], 255-mean[0])
+            self.model.img[1] = np.clip(self.model.img[1], -mean[1], 255-mean[1])
+            self.model.img[2] = np.clip(self.model.img[2], -mean[2], 255-mean[2])
 
             # Compute update size statistic
             update_size = np.mean(np.abs(avg_img - old_img))
@@ -694,7 +692,7 @@ class StyleTransfer:
 
                 # make sure the optimizer's params array shares memory with self.model.img
                 # after preprocess_image is called later
-                self.optimizer = LBFGSOptimizer(self.model.img, step_size=ARGS.step_size)
+                self.optimizer = SQNOptimizer(self.model.img, step_size=ARGS.step_size)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
