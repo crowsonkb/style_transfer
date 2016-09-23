@@ -35,7 +35,7 @@ EPS = np.finfo(np.float32).eps
 
 
 def normalize(arr):
-    """Normalizes an array to have an L1 norm of 1."""
+    """Normalizes an array to have an L1 norm equal to its length."""
     return arr / (np.mean(np.abs(arr)) + EPS)
 
 
