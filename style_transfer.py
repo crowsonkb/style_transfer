@@ -120,15 +120,18 @@ class LayerIndexer:
 
 class Optimizer:
     """Implements the Adam gradient descent optimizer with Polyak-Ruppert averaging."""
-    def __init__(self, params, step_size=1, averaging=True, b1=0.9, b2=0.999):
+    def __init__(self, params, step_size=1, averaging=True, decay=0, b1=0.9, b2=0.999):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
         self.averaging = averaging
         self.b1 = b1
         self.b2 = b2
+        self.decay = decay
         self.step = 0
+        self.t = np.ones_like(params)
         self.xy = np.zeros(2, dtype=np.int32)
+        self.last_grad = np.zeros_like(params)
         self.g1 = np.zeros_like(params)
         self.g2 = np.zeros_like(params)
         self.p1 = params.copy()
@@ -137,12 +140,22 @@ class Optimizer:
         """Returns a step's parameter update given its gradient."""
         self.step += 1
 
+        # Step size decay
+        if np.sum(grad * self.last_grad) < 0:
+            self.t += self.decay
+        self.last_grad[:] = grad
+        t = self.t
+        if self.averaging:
+            t **= 3/4
+        ss = self.step_size / t
+        # print('ss: %.4g' % ss)
+
         # Adam
         self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
         self.g2[:] = self.b2*self.g2 + (1-self.b2)*grad**2
         g1_hat = self.g1/(1-self.b1**self.step)
         g2_hat = self.g2/(1-self.b2**self.step)
-        self.params -= self.step_size * g1_hat / (np.sqrt(g2_hat) + EPS)
+        self.params -= ss * g1_hat / (np.sqrt(g2_hat) + EPS)
 
         # Polyak-Ruppert averaging
         weight = 1 / self.step
@@ -155,6 +168,7 @@ class Optimizer:
     def roll(self, xy):
         """Rolls the optimizer's internal state."""
         self.xy += xy
+        self.last_grad[:] = roll2(self.last_grad, xy)
         self.g1[:] = roll2(self.g1, xy)
         self.g2[:] = roll2(self.g2, xy)
         self.p1[:] = roll2(self.p1, xy)
@@ -166,8 +180,10 @@ class Optimizer:
         # looks better if Adam is provided with an incorrect step number for its resampled internal
         # state.
         self.step = 0
+        self.t = 1
         self.params = last_iterate
         hw = self.params.shape[-2:]
+        self.last_grad = resize(self.last_grad, hw)
         self.g1 = resize(self.g1, hw)
         self.g2 = resize(self.g2, hw, Image.NEAREST)
         self.p1 = resize(self.p1, hw)
@@ -179,6 +195,7 @@ class Optimizer:
         self.g2 = optimizer.g2
         self.p1 = optimizer.p1
         self.step = optimizer.step
+        self.t = optimizer.t
         self.xy = optimizer.xy.copy()
         self.roll(-self.xy)
 
@@ -638,7 +655,8 @@ class StyleTransfer:
                 # make sure the optimizer's params array shares memory with self.model.img
                 # after preprocess_image is called later
                 self.optimizer = Optimizer(
-                    self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging)
+                    self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
+                    decay=ARGS.step_decay)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
@@ -779,6 +797,8 @@ def parse_args():
         '--iterations', '-i', nargs='+', type=int, default=[300], help='the number of iterations')
     parser.add_argument(
         '--step-size', '-st', type=ffloat, default=15, help='the step size (iteration magnitude)')
+    parser.add_argument(
+        '--step-decay', '-sd', type=ffloat, default=0.1, help='the step size decay factor')
     parser.add_argument(
         '--size', '-s', nargs='+', type=int, default=[256], help='the output size(s)')
     parser.add_argument(
