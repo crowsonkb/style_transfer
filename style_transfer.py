@@ -584,23 +584,17 @@ class StyleTransfer:
             self.optimizer.roll(xy * jitter_scale)
 
             def eval_grad(params):
-                self.model.img = params
                 # Compute style+content gradient
+                old_params = self.model.img
+                self.model.img = params
                 grad = self.model.eval_sc_grad(self.pool, xy * jitter_scale, ARGS.content_layers,
                                                ARGS.style_layers, content_weight, style_weight,
                                                tile_size=ARGS.tile_size)
+                self.model.img = old_params
 
                 # Compute total variation gradient
                 tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
                 tv_grad = convolve(self.model.img, tv_kernel, mode='wrap')/255
-
-                # Selectively blur edges more to obscure jitter and tile seams
-                tv_mask = np.ones_like(tv_grad)
-                tv_mask[:, :2, :] = 5
-                tv_mask[:, -2:, :] = 5
-                tv_mask[:, :, :2] = 5
-                tv_mask[:, :, -2:] = 5
-                tv_grad *= tv_mask
 
                 # Compute a weighted sum of normalized gradients
                 return normalize(grad) + ARGS.tv_weight*tv_grad
