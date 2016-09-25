@@ -140,7 +140,8 @@ class Optimizer:
         # Adam
         self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
         self.g2[:] = self.b2*self.g2 + (1-self.b2)*grad**2
-        g1_hat = self.g1/(1-self.b1**self.step)
+        g1_bar = self.b1*self.g1 + (1-self.b1)*grad
+        g1_hat = g1_bar/(1-self.b1**(self.step+1))
         g2_hat = self.g2/(1-self.b2**self.step)
         self.params -= self.step_size * g1_hat / (np.sqrt(g2_hat) + EPS)
 
