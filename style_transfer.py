@@ -120,7 +120,7 @@ class LayerIndexer:
 
 class Optimizer:
     """Implements the Adam gradient descent optimizer with Polyak-Ruppert averaging."""
-    def __init__(self, params, step_size=1, averaging=True, b1=0.9, b2=0.999):
+    def __init__(self, params, step_size=1, averaging=True, b1=0.98, b2=0.999):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
@@ -132,13 +132,17 @@ class Optimizer:
         self.g1 = np.zeros_like(params)
         self.g2 = np.zeros_like(params)
         self.p1 = params.copy()
+        self.last_loss = 0
 
-    def update(self, grad):
+    def update(self, loss, grad):
         """Returns a step's parameter update given its gradient."""
         self.step += 1
 
         # Adam
+        if loss > self.last_loss:
+            self.g1[:] = 0
         self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
+        self.last_loss = loss
         self.g2[:] = self.b2*self.g2 + (1-self.b2)*grad**2
         g1_bar = self.b1*self.g1 + (1-self.b1)*grad
         g1_hat = g1_bar/(1-self.b1**(self.step+1))
@@ -187,7 +191,7 @@ FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
 SCGradRequest = namedtuple(
     'SCGradRequest', 'resp img roll start content_layers style_layers content_weight style_weight')
-SCGradResponse = namedtuple('SCGradResponse', 'resp grad')
+SCGradResponse = namedtuple('SCGradResponse', 'resp loss grad')
 SetFeaturesAndGrams = namedtuple('SetFeaturesAndGrams', 'features grams')
 
 
@@ -242,12 +246,12 @@ class TileWorker:
                     if layer in req.content_layers or layer in req.style_layers:
                         layers.append(layer)
                 self.model.roll(req.roll, jitter_scale=1)
-                grad = self.model.eval_sc_grad_tile(
+                loss, grad = self.model.eval_sc_grad_tile(
                     req.img.array, req.start, layers, req.content_layers, req.style_layers,
                     req.content_weight, req.style_weight)
                 req.img.unlink()
                 self.model.roll(-req.roll, jitter_scale=1)
-                self.resp_q.put(SCGradResponse(req.resp, SharedNDArray.copy(grad)))
+                self.resp_q.put(SCGradResponse(req.resp, loss, SharedNDArray.copy(grad)))
 
             if isinstance(req, SetFeaturesAndGrams):
                 self.model.features = \
@@ -460,7 +464,7 @@ class CaffeModel:
         for layer in layers:
             self.diff[layer] = 0
         self.net.forward(end=self.last_layer)
-        # content_loss, style_loss = 0, 0
+        loss = 0
 
         for i, layer in enumerate(layers):
             # Compute the content and style gradients
@@ -470,16 +474,16 @@ class CaffeModel:
                 end = start + np.array(self.data[layer].shape[-2:])
                 feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
                 c_grad = self.data[layer] - feat
-                self.diff[layer] += normalize(c_grad)*content_weight
-                # content_loss += 0.5 * np.sum((self.data[layer] - self.features[layer])**2)
+                self.diff[layer] += normalize(c_grad) * content_weight
+                loss += 0.5 * content_weight * np.sum((self.data[layer] - self.features[layer])**2)
             if layer in style_layers:
                 current_gram = gram_matrix(self.data[layer])
                 n, mh, mw = self.data[layer].shape
                 feat = self.data[layer].reshape((n, mh * mw))
                 s_grad = np.dot(current_gram - self.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
-                self.diff[layer] += normalize(s_grad)*style_weight
-                # style_loss += 0.5 * np.sum((current_gram - self.grams[layer])**2)
+                self.diff[layer] += normalize(s_grad) * style_weight
+                loss += 0.25 * np.sum((current_gram - self.grams[layer])**2)
 
             # Run the model backward
             if i+1 == len(layers):
@@ -487,7 +491,7 @@ class CaffeModel:
             else:
                 self.net.backward(start=layer, end=layers[i+1])
 
-        return self.diff['data']
+        return loss, self.diff['data']
 
     def eval_sc_grad(self, pool, roll, content_layers, style_layers, content_weight, style_weight,
                      tile_size=512):
@@ -512,11 +516,13 @@ class CaffeModel:
                     SCGradRequest((start, end), SharedNDArray.copy(tile), roll, start,
                                   content_layers, style_layers, content_weight, style_weight))
         pool.reset_next_worker()
+        loss = 0
         for _ in range(np.prod(ntiles)):
-            (start, end), grad_tile = pool.resp_q.get()
+            (start, end), loss_tile, grad_tile = pool.resp_q.get()
+            loss += loss_tile
             grad[:, start[0]:end[0], start[1]:end[1]] = grad_tile.array
 
-        return grad
+        return loss, grad
 
     def roll(self, xy, jitter_scale=32):
         """Rolls image and feature maps."""
@@ -550,7 +556,7 @@ class StyleTransfer:
         old_img = self.optimizer.p1.copy()
         self.step += 1
         log = open('log.csv', 'w')
-        print('tv loss', file=log, flush=True)
+        print('loss', file=log, flush=True)
 
         for step in range(1, iterations+1):
             # Forward jitter
@@ -564,12 +570,15 @@ class StyleTransfer:
             self.optimizer.roll(xy * jitter_scale)
 
             # Compute style+content gradient
-            grad = self.model.eval_sc_grad(self.pool, xy * jitter_scale, ARGS.content_layers,
-                                           ARGS.style_layers, content_weight, style_weight,
-                                           tile_size=ARGS.tile_size)
+            loss, grad = self.model.eval_sc_grad(self.pool, xy * jitter_scale, ARGS.content_layers,
+                                                 ARGS.style_layers, content_weight, style_weight,
+                                                 tile_size=ARGS.tile_size)
 
             # Compute total variation gradient
             tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
+            tv_h = convolve1d(self.model.img, [-1, 1], axis=1, mode='wrap')
+            tv_v = convolve1d(self.model.img, [-1, 1], axis=2, mode='wrap')
+            tv_loss = 0.5 * np.sum(tv_h**2 + tv_v**2)
             tv_grad = convolve(self.model.img, tv_kernel, mode='wrap')/255
 
             # Selectively blur edges more to obscure jitter and tile seams
@@ -581,10 +590,11 @@ class StyleTransfer:
             tv_grad *= tv_mask
 
             # Compute a weighted sum of normalized gradients
+            loss += tv_loss
             grad = normalize(grad) + ARGS.tv_weight*tv_grad
 
             # In-place gradient descent update
-            avg_img = self.optimizer.update(grad)
+            avg_img = self.optimizer.update(loss, grad)
 
             # Backward jitter
             self.model.roll(-xy, jitter_scale=jitter_scale)
@@ -600,16 +610,11 @@ class StyleTransfer:
             update_size = np.mean(np.abs(avg_img - old_img))
             old_img[:] = avg_img
 
-            # Compute tv loss statistic
-            tv_h = convolve1d(avg_img, [-1, 1], axis=1, mode='wrap')
-            tv_v = convolve1d(avg_img, [-1, 1], axis=2, mode='wrap')
-            tv_loss = 0.5 * np.sum(tv_h**2 + tv_v**2) / avg_img.size
-            print(tv_loss, file=log, flush=True)
-
             self.current_output = self.model.get_image(avg_img)
+            print(loss, file=log, flush=True)
 
             if callback is not None:
-                callback(step=step, update_size=update_size, loss=tv_loss)
+                callback(step=step, update_size=update_size, loss=loss / self.model.img.size)
 
         return self.current_output, self.model.get_image()
 
@@ -689,7 +694,7 @@ class Progress:
                 webbrowser.open(self.url)
         else:
             self.t = this_t - self.prev_t
-        print('Step %d, time: %.2f s, mean update: %.2f, mean tv loss: %.1f' %
+        print('Step %d, time: %.2f s, mean update: %.2f, mean loss: %.3e' %
               (step, self.t, update_size, loss), flush=True)
         self.prev_t = this_t
 
@@ -714,7 +719,7 @@ class ProgressHandler(BaseHTTPRequestHandler):
     <h1>Style transfer</h1>
     <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
     <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, mean update: %(update_size).2f,
-    mean tv loss: %(loss).1f
+    mean loss: %(loss).3e
     """
 
     def do_GET(self):
