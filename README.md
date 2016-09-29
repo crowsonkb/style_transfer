@@ -23,9 +23,17 @@ Dependencies:
 
 ## Example
 
-The obligatory Golden Gate Bridge + Starry Night style transfer ([big version](https://s3-us-west-2.amazonaws.com/cb0a-46ef-cc86-8dda/style_transfer_examples/golden_gate_sn_big.jpg)):
+The obligatory [Golden Gate Bridge](https://raw.githubusercontent.com/jcjohnson/neural-style/master/examples/inputs/golden_gate.jpg) + [The Starry Night](https://raw.githubusercontent.com/jcjohnson/neural-style/master/examples/inputs/starry_night.jpg) (van Gogh) style transfer ([big version](https://s3-us-west-2.amazonaws.com/cb0a-46ef-cc86-8dda/style_transfer_examples/golden_gate_sn_big.jpg)):
 
 <img src="examples/golden_gate_sn.jpg" width="512" height="384">
+
+[Golden Gate Bridge](https://raw.githubusercontent.com/jcjohnson/neural-style/master/examples/inputs/golden_gate.jpg) + [The Shipwreck of the Minotaur](https://raw.githubusercontent.com/jcjohnson/neural-style/master/examples/inputs/shipwreck.jpg) (Turner) ([big version](https://s3-us-west-2.amazonaws.com/cb0a-46ef-cc86-8dda/style_transfer_examples/golden_shipwreck.jpg)):
+
+<img src="examples/golden_shipwreck.jpg" width="512" height="384">
+
+[barn and pond](http://r0k.us/graphics/kodak/kodim22.html) (Cindy Branham) + [The Banks of the River](https://raw.githubusercontent.com/DmitryUlyanov/fast-neural-doodle/master/data/Renoir/style.png) (Renoir) ([big version](http://cb0a-46ef-cc86-8dda.s3.amazonaws.com/style_transfer_examples/kodim22_renoir.jpg)):
+
+<img src="examples/kodim22_renoir.jpg" width="512" height="341.5">
 
 ## Installation
 
