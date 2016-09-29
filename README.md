@@ -29,7 +29,7 @@ The obligatory Golden Gate Bridge + Starry Night style transfer ([big version](h
 
 ## Installation
 
-### Building pycaffe for Python 3.5
+### Building pycaffe for Python 3.5 (OS X)
 
 *If you use pycaffe for other things, you might want to do this in a second copy of Caffe so you don't break things using Python 2.*
 
@@ -51,6 +51,19 @@ PYTHON_LIB := $(PYTHON_DIR)/lib
 ```
 
 `make pycaffe` ought to compile the Python 3 bindings now.
+
+### Building pycaffe for Python 3.5 (Ubuntu 16.04)
+
+On Ubuntu 16.04, follow Caffe's [Ubuntu 15.10/16.04 install guide](https://github.com/BVLC/caffe/wiki/Ubuntu-16.04-or-15.10-Installation-Guide). The required `Makefile.config` lines for Python 3.5 are:
+
+```
+PYTHON_LIBRARIES := boost_python-py35 python3.5m
+PYTHON_INCLUDE := /usr/include/python3.5m \
+                  /usr/local/lib/python3.5/dist-packages/numpy/core/include
+PYTHON_LIB := /usr/lib
+```
+
+`style_transfer` is also known to work on Ubuntu 14.04 with Python 3.5 built from source.
 
 ### Installing style_transfer's Python dependencies
 
