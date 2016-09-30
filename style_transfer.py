@@ -56,12 +56,19 @@ def roll2(arr, xy):
     return np.roll(np.roll(arr, xy[0], 2), xy[1], 1)
 
 
-def gram_matrix(feat):
+def gram_matrix(feat, delta=0):
     """Computes the Gram matrix corresponding to a feature map."""
     n, mh, mw = feat.shape
-    feat = feat.reshape((n, mh * mw))
-    gram = np.dot(feat, feat.T) / np.float32(feat.size)
-    return gram
+    if delta == 0:
+        feat = feat.reshape((n, mh * mw))
+        return np.dot(feat, feat.T) / np.float32(feat.size)
+    crop_l = feat[:, :, delta:].reshape((n, mh * (mw-delta)))
+    crop_r = feat[:, :, :-delta].reshape((n, mh * (mw-delta)))
+    crop_u = feat[:, delta:, :].reshape((n, (mh-delta) * mw))
+    crop_d = feat[:, :-delta, :].reshape((n, (mh-delta) * mw))
+    gram = np.dot(crop_l, crop_r.T) / np.float32(crop_l.size)
+    gram += np.dot(crop_u, crop_d.T) / np.float32(crop_u.size)
+    return gram / 2
 
 
 # pylint: disable=no-member
@@ -427,7 +434,7 @@ class CaffeModel:
         return self.features
 
     def preprocess_images(self, pool, content_image, style_image, content_layers, style_layers,
-                          tile_size=512):
+                          tile_size=512, delta=0):
         """Performs preprocessing tasks on the input images."""
         # Construct list of layers to visit during the backward pass
         layers = []
@@ -441,7 +448,8 @@ class CaffeModel:
         self.set_image(style_image)
         feats = self.prepare_features(pool, style_layers, tile_size)
         for layer in feats:
-            self.grams[layer] = gram_matrix(feats[layer])
+            scale, _ = self.layer_info(layer)
+            self.grams[layer] = gram_matrix(feats[layer], delta=delta*32//scale)
 
         # Prepare feature maps from content image
         print('Preprocessing the content image...')
@@ -543,7 +551,7 @@ class StyleTransfer:
 
         layers = self.model.preprocess_images(
             self.pool, content_image, style_image, ARGS.content_layers, ARGS.style_layers,
-            ARGS.tile_size)
+            ARGS.tile_size, ARGS.delta)
         self.pool.set_features_and_grams(self.model.features, self.model.grams)
         self.model.img = params
 
@@ -798,6 +806,8 @@ def parse_args():
         '--style-layers', nargs='*', metavar='LAYER',
         default=['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1'],
         help='the layers to use for style')
+    parser.add_argument(
+        '--delta', type=int, default=0, help='the shift to use for style autocorrelation')
     parser.add_argument(
         '--port', '-p', type=int, default=8000,
         help='the port to use for the http server')
