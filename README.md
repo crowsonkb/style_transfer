@@ -1,6 +1,6 @@
 # style_transfer
 
-Data-parallel neural style transfer using Caffe. Implements [A Neural Algorithm of Artistic Style](http://arxiv.org/abs/1508.06576).
+Data-parallel image stylization using Caffe. Implements [A Neural Algorithm of Artistic Style](http://arxiv.org/abs/1508.06576).
 
 Dependencies:
 - [Python](https://www.python.org) 3.5
@@ -14,7 +14,7 @@ Dependencies:
 - The image is divided into tiles which are processed one per GPU at a time. Since the tiles can be sized so as to fit into GPU memory, this allows arbitrary size images to be processed&mdash;including print size. (ex: `--size 2048 --tile-size 512`)
 - Images can be processed at multiple scales for speed. For instance, `--size 512 1024 2048 -i 100` will run 100 iterations at 512x512, then 100 at 1024x1024, then 100 more at 2048x2048.
 - Multi-GPU support (ex: `--devices 0 1 2 3`). Four GPUs, for instance, can process four tiles at a time.
-- Uses [Polyak-Ruppert averaging](https://www.researchgate.net/profile/Boris_Polyak2/publication/236736831_Acceleration_of_stochastic_approximation_by_averaging_SIAM_J_Control_Optim_30_838-855/links/0f31753227e964baab000000.pdf) over successive iterations to reduce image noise.
+- Uses Polyak-Ruppert averaging over successive iterations to reduce image noise.
 
 ## Known issues
 
@@ -100,3 +100,13 @@ You should be able to run `style_transfer` now by specifying the path to Caffe's
 ```
 PYTHONPATH="/path/to/caffe/python" python3 style_transfer.py <content_image> <style_image>
 ```
+
+## References
+
+L. Gatys, A. Ecker, M. Bethge, "[A Neural Algorithm of Artistic Style](https://arxiv.org/abs/1508.06576)"
+
+D. Kingma, J. Ba, "[Adam: A Method for Stochastic Optimization](https://arxiv.org/abs/1412.6980)"
+
+B. Polyak, A. Juditsky, "[Acceleration of stochastic approximation by averaging](https://www.researchgate.net/profile/Boris_Polyak2/publication/236736831_Acceleration_of_stochastic_approximation_by_averaging_SIAM_J_Control_Optim_30_838-855/links/0f31753227e964baab000000.pdf)"
+
+K. Simonyan, A. Zisserman, "[Very Deep Convolutional Networks for Large-Scale Image Recognition](https://arxiv.org/abs/1409.1556)"
