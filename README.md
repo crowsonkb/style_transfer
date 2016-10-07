@@ -20,7 +20,7 @@ Dependencies:
 
 - Use of more than one content layer will produce incorrect feature maps when there is more than one tile.
 
-## Example
+## Examples
 
 The obligatory [Golden Gate Bridge](https://raw.githubusercontent.com/jcjohnson/neural-style/master/examples/inputs/golden_gate.jpg) + [The Starry Night](https://raw.githubusercontent.com/jcjohnson/neural-style/master/examples/inputs/starry_night.jpg) (van Gogh) style transfer ([big version](https://s3-us-west-2.amazonaws.com/cb0a-46ef-cc86-8dda/style_transfer_examples/golden_gate_sn_big.jpg)):
 
