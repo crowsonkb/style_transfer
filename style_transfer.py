@@ -825,6 +825,8 @@ def parse_args():
         help='device numbers to use (-1 for cpu)')
     parser.add_argument(
         '--tile-size', type=int, default=512, help='the maximum rendering tile size')
+    parser.add_argument(
+        '--seed', type=int, default=0, help='the random seed')
     global ARGS  # pylint: disable=global-statement
     ARGS = parser.parse_args()
 
@@ -874,7 +876,7 @@ def main():
     if ARGS.state:
         state = pickle.load(open(ARGS.state, 'rb'))
 
-    np.random.seed(0)
+    np.random.seed(ARGS.seed)
     try:
         transfer.transfer_multiscale(
             sizes, ARGS.iterations, content_image, style_image, initial_image,
