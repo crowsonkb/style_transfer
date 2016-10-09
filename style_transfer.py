@@ -618,6 +618,7 @@ class StyleTransfer:
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
         last_iterate = None
+        print('Starting %d worker process(es).' % len(ARGS.devices))
         self.pool = TileWorkerPool(self.model, ARGS.devices)
 
         for i, size in enumerate(sizes):
@@ -837,6 +838,7 @@ def main():
     import caffe
     caffe.set_mode_cpu()
 
+    print('Loading %s.' % ARGS.weights)
     model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean)
     transfer = StyleTransfer(model)
     if ARGS.list_layers:
