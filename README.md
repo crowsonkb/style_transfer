@@ -3,9 +3,9 @@
 Data-parallel image stylization using Caffe. Implements [A Neural Algorithm of Artistic Style](http://arxiv.org/abs/1508.06576).
 
 Dependencies:
-- [Python](https://www.python.org) 3.5
-- [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 3.5
-- Python packages [numpy](http://www.numpy.org), [Pillow](https://python-pillow.org), [posix-ipc](http://semanchuk.com/philip/posix_ipc/), [scipy](http://www.scipy.org)
+- [Python](https://www.python.org) 2.7 or 3.5
+- [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 2.7 or 3.5
+- Python packages [numpy](http://www.numpy.org), [Pillow](https://python-pillow.org), [posix-ipc](http://semanchuk.com/philip/posix_ipc/), [scipy](http://www.scipy.org), [six](https://pythonhosted.org/six/)
 
 `style_transfer` will run faster if numpy is compiled to use [MKL](https://software.intel.com/en-us/intel-mkl). If you are running Caffe on the CPU, it will also be faster if compiled with MKL. `style_transfer` uses one worker process per GPU, so the optimal value for `MKL_NUM_THREADS` is the number of real CPU cores divided by the number of GPUs.
 
@@ -36,9 +36,11 @@ The obligatory [Golden Gate Bridge](https://raw.githubusercontent.com/jcjohnson/
 
 ## Installation
 
-### Building pycaffe for Python 3.5 (OS X)
+*Python 2 support is relatively untested. Please feel free to report issues! Be sure to specify which Python version you are using if you report an issue.*
 
-*If you use pycaffe for other things, you might want to do this in a second copy of Caffe so you don't break things using Python 2.*
+*If you use pycaffe for other things, you might want to build pycaffe for Python 3 in a second copy of Caffe so you don't break things using Python 2.*
+
+### Building pycaffe for Python 3.5 (OS X)
 
 On OS X, you can install Python 3 and Boost.Python using [Homebrew](http://brew.sh):
 

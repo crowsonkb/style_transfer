@@ -5,16 +5,16 @@
 
 # pylint: disable=invalid-name, too-many-arguments, too-many-instance-attributes, too-many-locals
 
+from __future__ import division
+
 import argparse
 from collections import namedtuple
 from fractions import Fraction
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import io
 import mmap
 import multiprocessing as mp
 import os
 import pickle
-from socketserver import ThreadingMixIn
 import sys
 import threading
 import time
@@ -24,11 +24,20 @@ import numpy as np
 from PIL import Image
 import posix_ipc
 from scipy.ndimage import convolve, convolve1d
+import six
+from six import print_
+from six.moves import cPickle as pickle
+from six.moves.BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from six.moves.socketserver import ThreadingMixIn
 
 ARGS = None
 
-# Spawn new Python interpreters - forking mixes badly with caffe
-CTX = mp.get_context('spawn')
+if six.PY2:
+    CTX = mp
+    timer = time.time
+else:
+    CTX = mp.get_context('spawn')
+    timer = time.perf_counter
 
 # Machine epsilon for float32
 EPS = np.finfo(np.float32).eps
@@ -201,7 +210,8 @@ class TileWorker:
         self.device = device
         self.features = None
         self.grams = None
-        self.proc = CTX.Process(target=self.run, daemon=True)
+        self.proc = CTX.Process(target=self.run)
+        self.proc.daemon = True
         self.proc.start()
 
     def __del__(self):
@@ -373,8 +383,8 @@ class CaffeModel:
         img_size = np.array(self.img.shape[-2:])
         ntiles = (img_size-1) // tile_size + 1
         tile_size = img_size // ntiles
-        print('Using %dx%d tiles of size %dx%d.' %
-              (ntiles[1], ntiles[0], tile_size[1], tile_size[0]))
+        print_('Using %dx%d tiles of size %dx%d.' %
+               (ntiles[1], ntiles[0], tile_size[1], tile_size[0]))
         features = {}
         for layer in layers:
             scale, channels = self.layer_info(layer)
@@ -436,7 +446,7 @@ class CaffeModel:
                 layers.append(layer)
 
         # Prepare Gram matrices from style image
-        print('Preprocessing the style image...')
+        print_('Preprocessing the style image...')
         self.grams = {}
         self.set_image(style_image)
         feats = self.prepare_features(pool, style_layers, tile_size)
@@ -444,7 +454,7 @@ class CaffeModel:
             self.grams[layer] = gram_matrix(feats[layer])
 
         # Prepare feature maps from content image
-        print('Preprocessing the content image...')
+        print_('Preprocessing the content image...')
         self.set_image(content_image)
         self.prepare_features(pool, content_layers, tile_size)
 
@@ -550,7 +560,7 @@ class StyleTransfer:
         old_img = self.optimizer.p1.copy()
         self.step += 1
         log = open('log.csv', 'w')
-        print('tv loss', file=log, flush=True)
+        print_('tv loss', file=log, flush=True)
 
         for step in range(1, iterations+1):
             # Forward jitter
@@ -604,7 +614,7 @@ class StyleTransfer:
             tv_h = convolve1d(avg_img, [-1, 1], axis=1, mode='wrap')
             tv_v = convolve1d(avg_img, [-1, 1], axis=2, mode='wrap')
             tv_loss = 0.5 * np.sum(tv_h**2 + tv_v**2) / avg_img.size
-            print(tv_loss, file=log, flush=True)
+            print_(tv_loss, file=log, flush=True)
 
             self.current_output = self.model.get_image(avg_img)
 
@@ -618,7 +628,7 @@ class StyleTransfer:
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
         last_iterate = None
-        print('Starting %d worker process(es).' % len(ARGS.devices))
+        print_('Starting %d worker process(es).' % len(ARGS.devices))
         self.pool = TileWorkerPool(self.model, ARGS.devices)
 
         for i, size in enumerate(sizes):
@@ -679,7 +689,7 @@ class Progress:
         self.save_every = save_every
 
     def __call__(self, step=-1, update_size=np.nan, loss=np.nan):
-        this_t = time.perf_counter()
+        this_t = timer()
         self.step += 1
         self.update_size = update_size
         self.loss = loss
@@ -690,8 +700,8 @@ class Progress:
                 webbrowser.open(self.url)
         else:
             self.t = this_t - self.prev_t
-        print('Step %d, time: %.2f s, mean update: %.2f, mean tv loss: %.1f' %
-              (step, self.t, update_size, loss), flush=True)
+        print_('Step %d, time: %.2f s, mean update: %.2f, mean tv loss: %.1f' %
+               (step, self.t, update_size, loss), flush=True)
         self.prev_t = this_t
 
 
@@ -749,17 +759,17 @@ class ProgressHandler(BaseHTTPRequestHandler):
 
 def resize_to_fit(image, size, scale_up=False):
     """Resizes image to fit into a size-by-size square."""
-    size = round(size)
+    size = int(round(size))
     w, h = image.size
     if not scale_up and max(w, h) <= size:
         return image
     new_w, new_h = w, h
     if w > h:
         new_w = size
-        new_h = round(size * h/w)
+        new_h = int(round(size * h/w))
     else:
         new_h = size
-        new_w = round(size * w/h)
+        new_w = int(round(size * w/h))
     return image.resize((new_w, new_h), Image.LANCZOS)
 
 
@@ -833,20 +843,20 @@ def parse_args():
 
 def main():
     """CLI interface for style transfer."""
-    start_time = time.perf_counter()
+    start_time = timer()
     parse_args()
 
     os.environ['GLOG_minloglevel'] = '2'
     import caffe
     caffe.set_mode_cpu()
 
-    print('Loading %s.' % ARGS.weights)
+    print_('Loading %s.' % ARGS.weights)
     model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean)
     transfer = StyleTransfer(model)
     if ARGS.list_layers:
-        print('Layers:')
+        print_('Layers:')
         for layer in model.layers():
-            print('    %s, size=%s' % (layer, model.data[layer].shape))
+            print_('    %s, size=%s' % (layer, model.data[layer].shape))
         sys.exit(0)
 
     sizes = sorted(ARGS.size)
@@ -869,8 +879,10 @@ def main():
         steps += ARGS.iterations[min(i, len(ARGS.iterations)-1)]
     server.progress = Progress(
         transfer, steps=steps, save_every=ARGS.save_every, **progress_args)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    print('\nWatch the progress at: %s\n' % url)
+    th = threading.Thread(target=server.serve_forever)
+    th.daemon = True
+    th.start()
+    print_('\nWatch the progress at: %s\n' % url)
 
     state = None
     if ARGS.state:
@@ -882,16 +894,16 @@ def main():
             sizes, ARGS.iterations, content_image, style_image, initial_image,
             callback=server.progress, initial_state=state)
     except KeyboardInterrupt:
-        print()
+        print_()
 
     if transfer.current_output:
-        print('Saving output as %s.' % ARGS.output_image)
+        print_('Saving output as %s.' % ARGS.output_image)
         transfer.current_output.save(ARGS.output_image)
         a, _, _ = ARGS.output_image.rpartition('.')
-        print('Saving state as %s.' % (a + '.state'))
+        print_('Saving state as %s.' % (a + '.state'))
         transfer.save_state(a + '.state')
-    time_spent = time.perf_counter() - start_time
-    print('Exiting after %dm %.2fs.' % (time_spent // 60, time_spent % 60))
+    time_spent = timer() - start_time
+    print_('Exiting after %dm %.2fs.' % (time_spent // 60, time_spent % 60))
 
 if __name__ == '__main__':
     main()
