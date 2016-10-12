@@ -23,7 +23,7 @@ import webbrowser
 import numpy as np
 from PIL import Image
 import posix_ipc
-from scipy.ndimage import convolve, convolve1d
+from scipy.ndimage import convolve1d
 import six
 from six import print_
 from six.moves import cPickle as pickle
@@ -71,6 +71,23 @@ def gram_matrix(feat):
     feat = feat.reshape((n, mh * mw))
     gram = np.dot(feat, feat.T) / np.float32(feat.size)
     return gram
+
+
+def tv_norm(x, beta=2):
+    """Computes the total variation norm and its gradient. From jcjohnson/cnn-vis."""
+    x_diff = convolve1d(x, [-1, 1], axis=2, mode='wrap')
+    y_diff = convolve1d(x, [-1, 1], axis=1, mode='wrap')
+    grad_norm2 = x_diff**2 + y_diff**2 + EPS
+    grad_norm_beta = grad_norm2**(beta/2)
+    loss = np.sum(grad_norm_beta)
+    dgrad_norm2 = (beta/2) * grad_norm2**(beta/2 - 1)
+    dx_diff = 2 * x_diff * dgrad_norm2
+    dy_diff = 2 * y_diff * dgrad_norm2
+    dxy_diff = dx_diff + dy_diff
+    dx_diff = roll2(dx_diff, (1, 0))
+    dy_diff = roll2(dy_diff, (0, 1))
+    grad = dxy_diff - dx_diff - dy_diff
+    return loss, grad
 
 
 # pylint: disable=no-member
@@ -592,9 +609,9 @@ class StyleTransfer:
                 self.pool, xy * jitter_scale, ARGS.content_layers, ARGS.style_layers,
                 ARGS.dd_layers, content_weight, style_weight, dd_weight, tile_size=ARGS.tile_size)
 
-            # Compute total variation gradient (from jcjohnson/neural-style)
-            tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
-            tv_grad = convolve(self.model.img, tv_kernel, mode='wrap')/255
+            # Compute total variation gradient
+            tv_loss, tv_grad = tv_norm(self.model.img, beta=ARGS.tv_power)
+            tv_grad /= 255**(ARGS.tv_power-1)
 
             # Selectively blur edges more to obscure jitter and tile seams
             tv_mask = np.ones_like(tv_grad)
@@ -625,18 +642,13 @@ class StyleTransfer:
             update_size = np.mean(np.abs(avg_img - old_img))
             old_img[:] = avg_img
 
-            # Compute tv loss statistic
-            tv_h = convolve1d(avg_img, [-1, 1], axis=1, mode='wrap')
-            tv_v = convolve1d(avg_img, [-1, 1], axis=2, mode='wrap')
-            tv_loss = 0.5 * np.sum(tv_h**2 + tv_v**2) / avg_img.size
-
             # Record current output
             self.current_output = self.model.get_image(avg_img)
 
             print_(step, img_size, update_size, tv_loss, sep=',', file=log, flush=True)
 
             if callback is not None:
-                callback(step=step, update_size=update_size, loss=tv_loss)
+                callback(step=step, update_size=update_size, loss=tv_loss / avg_img.size)
 
         return self.current_output, self.model.get_image()
 
@@ -824,6 +836,8 @@ def parse_args():
         '--dd-weight', '-dw', type=ffloat, default=0, help='the Deep Dream factor')
     parser.add_argument(
         '--tv-weight', '-tw', type=ffloat, default=1, help='the smoothing factor')
+    parser.add_argument(
+        '--tv-power', '-tp', metavar='BETA', type=ffloat, default=2, help='the smoothing exponent')
     parser.add_argument(
         '--p-weight', '-pw', type=ffloat, default=0.05, help='the p-norm regularizer factor')
     parser.add_argument(
