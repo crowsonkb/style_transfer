@@ -607,7 +607,7 @@ class StyleTransfer:
 
             # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis)
             p = ARGS.p_power
-            p_grad = p * np.sign(self.model.img) * np.abs(self.model.img)**(p-1) / 127.5**(p-1)
+            p_grad = p * np.sign(self.model.img) * np.abs(self.model.img / 127.5)**(p-1)
 
             # Compute a weighted sum of gradients
             grad = normalize(grad) + ARGS.tv_weight * tv_grad + ARGS.p_weight * p_grad
