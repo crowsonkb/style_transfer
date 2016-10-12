@@ -8,7 +8,7 @@
 from __future__ import division
 
 import argparse
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 from fractions import Fraction
 import io
 import mmap
@@ -208,7 +208,7 @@ class TileWorker:
         self.req_q = req_q
         self.resp_q = resp_q
         self.model = None
-        self.model_info = (model.deploy, model.weights, model.mean, model.net_type)
+        self.model_info = (model.deploy, model.weights, model.mean, model.net_type, model.shapes)
         self.device = device
         self.features = None
         self.grams = None
@@ -322,18 +322,22 @@ class TileWorkerPool:
 
 class CaffeModel:
     """A Caffe neural network model."""
-    def __init__(self, deploy, weights, mean=(0, 0, 0), net_type=None, layers=None,
+    def __init__(self, deploy, weights, mean=(0, 0, 0), net_type=None, shapes=None,
                  placeholder=False):
         self.deploy = deploy
         self.weights = weights
         self.mean = np.float32(mean).reshape((3, 1, 1))
         self.bgr = True
-        self.layer_list = layers
-        assert net_type is not None
+        self.shapes = shapes
         self.net_type = net_type
         if net_type == 'vgg':
             self.last_layer = 'pool5'
-            self.layer_info = self.layer_info_vgg
+        elif net_type == 'googlenet':
+            self.last_layer = 'pool5/7x7_s1'
+        elif net_type == 'resnet':
+            self.last_layer = 'pool5'
+        else:
+            raise ValueError('Invalid net_type')
         if not placeholder:
             import caffe
             self.net = caffe.Net(self.deploy, 1, weights=self.weights)
@@ -362,8 +366,8 @@ class CaffeModel:
 
     def layers(self):
         """Returns the layer names of the network."""
-        if self.layer_list:
-            return self.layer_list
+        if self.shapes:
+            return list(self.shapes)
         layers = []
         for i, layer in enumerate(self.net.blobs.keys()):
             if i == 0:
@@ -372,14 +376,9 @@ class CaffeModel:
                 layers.append(layer)
         return layers
 
-    @staticmethod
-    def layer_info_vgg(layer):
-        """Returns the number of channels and the scale factor vs. the image for a VGG layer."""
-        level = int(layer[4])-1
-        channels = (64, 128, 256, 512, 512)[level]
-        if layer.startswith('pool'):
-            level += 1
-        return 2**level, channels
+    def layer_info(self, layer):
+        """Returns the scale factor vs. the image and the number of channels."""
+        return 224 // self.shapes[layer][1], self.shapes[layer][0]
 
     def eval_features_tile(self, img, layers):
         """Computes a single tile in a set of feature maps."""
@@ -858,6 +857,8 @@ def parse_args():
         default=(103.939, 116.779, 123.68),
         help='the per-channel means of the model (BGR order)')
     parser.add_argument(
+        '--net-type', default='vgg', help='the type of model (vgg, googlenet, resnet)')
+    parser.add_argument(
         '--save-every', metavar='N', type=int, default=0, help='save the image every n steps')
     parser.add_argument(
         '--devices', nargs='+', metavar='DEVICE', type=int, default=[0],
@@ -873,11 +874,14 @@ def parse_args():
 
 
 def init_model(resp_q, net_type):
-    """Puts the list of model layers into resp_q. To be run in a separate process."""
+    """Puts the list of layer shapes into resp_q. To be run in a separate process."""
     import caffe
     caffe.set_mode_cpu()
     model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, net_type)
-    resp_q.put(model.layers())
+    shapes = OrderedDict()
+    for layer in model.layers():
+        shapes[layer] = model.data[layer].shape
+    resp_q.put(shapes)
 
 
 def main():
@@ -889,9 +893,10 @@ def main():
 
     print_('Loading %s.' % ARGS.weights)
     resp_q = CTX.Queue()
-    CTX.Process(target=init_model, args=(resp_q, 'vgg')).start()
-    layers = resp_q.get()
-    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, 'vgg', layers=layers, placeholder=True)
+    CTX.Process(target=init_model, args=(resp_q, ARGS.net_type)).start()
+    shapes = resp_q.get()
+    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, ARGS.net_type, shapes=shapes,
+                       placeholder=True)
     transfer = StyleTransfer(model)
     if ARGS.list_layers:
         print_('Layers:')
