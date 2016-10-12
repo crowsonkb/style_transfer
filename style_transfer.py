@@ -608,7 +608,7 @@ class StyleTransfer:
 
             # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis)
             p = ARGS.p_power
-            p_grad = p * np.sign(self.model.img) * np.abs(self.model.img)**(p-1) / 255**(p-1)
+            p_grad = p * np.sign(self.model.img) * np.abs(self.model.img)**(p-1) / 127.5**(p-1)
 
             # Compute a weighted sum of gradients
             grad = normalize(grad) + ARGS.tv_weight * tv_grad + ARGS.p_weight * p_grad
@@ -824,7 +824,7 @@ def parse_args():
     parser.add_argument(
         '--tv-weight', '-tw', type=ffloat, default=1, help='the smoothing factor')
     parser.add_argument(
-        '--p-weight', '-pw', type=ffloat, default=1, help='the p-norm regularizer factor')
+        '--p-weight', '-pw', type=ffloat, default=0.05, help='the p-norm regularizer factor')
     parser.add_argument(
         '--p-power', '-pp', metavar='P', type=ffloat, default=6, help='the p-norm exponent')
     parser.add_argument(
