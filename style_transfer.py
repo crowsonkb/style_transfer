@@ -425,16 +425,17 @@ class CaffeModel:
             passes = 1
         self.features = {}
         for i in range(passes):
+            print_('Pass %d' % (i+1))
             xy = np.array((0, 0))
             if i > 0:
                 xy = np.int32(np.random.uniform(size=2) * img_size) // 32
             self.roll(xy)
-            feats = self.eval_features_once(pool, layers, tile_size)
-            if not self.features:
-                self.features = feats
-            else:
-                for layer in self.features:
-                    self.features[layer] += feats[layer]
+            for layer in layers:
+                feat = self.eval_features_once(pool, [layer], tile_size)[layer]
+                if i == 0:
+                    self.features[layer] = feat
+                else:
+                    self.features[layer] += feat
             self.roll(-xy)
         for layer in self.features:
             self.features[layer] /= passes
