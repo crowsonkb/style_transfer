@@ -156,7 +156,7 @@ class Optimizer:
         g2_hat = self.g2/(1-self.b2**self.step)
         self.params -= self.step_size * g1_hat / (np.sqrt(g2_hat) + EPS)
 
-        # Polyak-Ruppert averaging
+        # Polynomial-decay averaging
         weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
         self.p1[:] = (1-weight)*self.p1 + weight*self.params
         if self.averaging:
@@ -174,9 +174,8 @@ class Optimizer:
     def set_params(self, last_iterate):
         """Sets params to the supplied array (a possibly-resized or altered last non-averaged
         iterate), resampling the optimizer's internal state if the shape has changed."""
-        # P-R averaging should only average over the current scale. For some reason the result
-        # looks better if Adam is provided with an incorrect step number for its resampled internal
-        # state.
+        # Only average over the current scale. The result looks better if Adam is provided with an
+        # incorrect step number for its resampled internal state.
         self.step = 0
         self.params = last_iterate
         hw = self.params.shape[-2:]
@@ -585,7 +584,7 @@ class StyleTransfer:
                                            ARGS.style_layers, content_weight, style_weight,
                                            tile_size=ARGS.tile_size)
 
-            # Compute total variation gradient
+            # Compute total variation gradient (from jcjohnson/neural-style)
             tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
             tv_grad = convolve(self.model.img, tv_kernel, mode='wrap')/255
 
@@ -623,6 +622,7 @@ class StyleTransfer:
             tv_loss = 0.5 * np.sum(tv_h**2 + tv_v**2) / avg_img.size
             print_(tv_loss, file=log, flush=True)
 
+            # Record current output
             self.current_output = self.model.get_image(avg_img)
 
             if callback is not None:
