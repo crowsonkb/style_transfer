@@ -571,7 +571,7 @@ class StyleTransfer:
         old_img = self.optimizer.p1.copy()
         self.step += 1
         log = open('log.csv', 'w')
-        print_('tv loss', file=log, flush=True)
+        print_('step', 'update_size', 'tv_loss', sep=',', file=log, flush=True)
 
         for step in range(1, iterations+1):
             # Forward jitter
@@ -623,10 +623,11 @@ class StyleTransfer:
             tv_h = convolve1d(avg_img, [-1, 1], axis=1, mode='wrap')
             tv_v = convolve1d(avg_img, [-1, 1], axis=2, mode='wrap')
             tv_loss = 0.5 * np.sum(tv_h**2 + tv_v**2) / avg_img.size
-            print_(tv_loss, file=log, flush=True)
 
             # Record current output
             self.current_output = self.model.get_image(avg_img)
+
+            print_(step, update_size, tv_loss, sep=',', file=log, flush=True)
 
             if callback is not None:
                 callback(step=step, update_size=update_size, loss=tv_loss)
