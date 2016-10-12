@@ -4,3 +4,4 @@ venv*
 *.caffemodel
 *.state
 *.csv
+.updated
