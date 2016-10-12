@@ -3,7 +3,7 @@
 Data-parallel image stylization using Caffe. Implements [A Neural Algorithm of Artistic Style](http://arxiv.org/abs/1508.06576).
 
 Dependencies:
-- [Python](https://www.python.org) 2.7 or 3.5 (GPU mode is not supported with Python 2.7 at the moment)
+- [Python](https://www.python.org) 2.7 or 3.5
 - [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 2.7 or 3.5
 - Python packages [numpy](http://www.numpy.org), [Pillow](https://python-pillow.org), [posix-ipc](http://semanchuk.com/philip/posix_ipc/), [scipy](http://www.scipy.org), [six](https://pythonhosted.org/six/)
 

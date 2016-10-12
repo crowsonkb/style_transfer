@@ -36,7 +36,7 @@ if six.PY2:
     CTX = mp
     timer = time.time
 else:
-    CTX = mp.get_context('spawn')
+    CTX = mp.get_context('fork')
     timer = time.perf_counter
 
 # Machine epsilon for float32
@@ -320,16 +320,18 @@ class TileWorkerPool:
 
 class CaffeModel:
     """A Caffe neural network model."""
-    def __init__(self, deploy, weights, mean=(0, 0, 0), bgr=True):
-        import caffe
+    def __init__(self, deploy, weights, mean=(0, 0, 0), bgr=True, layers=None, placeholder=False):
         self.deploy = deploy
         self.weights = weights
         self.mean = np.float32(mean).reshape((3, 1, 1))
         self.bgr = bgr
+        self.layer_list = layers
         self.last_layer = 'pool5'
-        self.net = caffe.Net(self.deploy, 1, weights=self.weights)
-        self.data = LayerIndexer(self.net, 'data')
-        self.diff = LayerIndexer(self.net, 'diff')
+        if not placeholder:
+            import caffe
+            self.net = caffe.Net(self.deploy, 1, weights=self.weights)
+            self.data = LayerIndexer(self.net, 'data')
+            self.diff = LayerIndexer(self.net, 'diff')
         self.features = None
         self.grams = None
         self.img = None
@@ -353,6 +355,8 @@ class CaffeModel:
 
     def layers(self):
         """Returns the layer names of the network."""
+        if self.layer_list:
+            return self.layer_list
         layers = []
         for i, layer in enumerate(self.net.blobs.keys()):
             if i == 0:
@@ -841,22 +845,31 @@ def parse_args():
     ARGS = parser.parse_args()
 
 
+def init_model(resp_q):
+    """Puts the list of model layers into resp_q. To be run in a separate process."""
+    import caffe
+    caffe.set_mode_cpu()
+    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean)
+    resp_q.put(model.layers())
+
+
 def main():
     """CLI interface for style transfer."""
     start_time = timer()
     parse_args()
 
     os.environ['GLOG_minloglevel'] = '2'
-    import caffe
-    caffe.set_mode_cpu()
 
     print_('Loading %s.' % ARGS.weights)
-    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean)
+    resp_q = CTX.Queue()
+    CTX.Process(target=init_model, args=(resp_q,)).start()
+    layers = resp_q.get()
+    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, layers=layers, placeholder=True)
     transfer = StyleTransfer(model)
     if ARGS.list_layers:
         print_('Layers:')
         for layer in model.layers():
-            print_('    %s, size=%s' % (layer, model.data[layer].shape))
+            print_('    %s' % layer)
         sys.exit(0)
 
     sizes = sorted(ARGS.size)
