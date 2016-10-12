@@ -900,8 +900,8 @@ def main():
     transfer = StyleTransfer(model)
     if ARGS.list_layers:
         print_('Layers:')
-        for layer in model.layers():
-            print_('    %s' % layer)
+        for layer, shape in model.shapes.items():
+            print_('% 25s %s' % (layer, shape))
         sys.exit(0)
 
     sizes = sorted(ARGS.size)
