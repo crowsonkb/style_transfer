@@ -502,7 +502,8 @@ class CaffeModel:
                 self.diff[layer] += normalize(s_grad) * style_weight
                 # style_loss += 0.5 * np.sum((current_gram - self.grams[layer])**2)
             if layer in dd_layers:
-                self.diff[layer] -= normalize(self.data[layer]) * dd_weight
+                dd_grad = np.sign(self.data[layer]) * np.abs(self.data[layer])**0.5
+                self.diff[layer] -= normalize(dd_grad) * dd_weight
 
             # Run the model backward
             if i+1 == len(layers):
