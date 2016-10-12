@@ -111,4 +111,6 @@ D. Kingma, J. Ba, "[Adam: A Method for Stochastic Optimization](https://arxiv.or
 
 B. Polyak, A. Juditsky, "[Acceleration of stochastic approximation by averaging](https://www.researchgate.net/profile/Boris_Polyak2/publication/236736831_Acceleration_of_stochastic_approximation_by_averaging_SIAM_J_Control_Optim_30_838-855/links/0f31753227e964baab000000.pdf)"
 
+O. Shamir, T. Zhang, "[Stochastic Gradient Descent for Non-smooth Optimization: Convergence Results and Optimal Averaging Schemes](http://jmlr.csail.mit.edu/proceedings/papers/v28/shamir13.pdf)"
+
 K. Simonyan, A. Zisserman, "[Very Deep Convolutional Networks for Large-Scale Image Recognition](https://arxiv.org/abs/1409.1556)"
