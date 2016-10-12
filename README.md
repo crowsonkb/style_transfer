@@ -109,6 +109,8 @@ PYTHONPATH="/path/to/caffe/python" python3 style_transfer.py <content_image> <st
 
 L. Gatys, A. Ecker, M. Bethge, "[A Neural Algorithm of Artistic Style](https://arxiv.org/abs/1508.06576)"
 
+A. Mahendran, A. Vedaldi, "[Understanding Deep Image Representations by Inverting Them](https://arxiv.org/abs/1412.0035)"
+
 D. Kingma, J. Ba, "[Adam: A Method for Stochastic Optimization](https://arxiv.org/abs/1412.6980)"
 
 B. Polyak, A. Juditsky, "[Acceleration of stochastic approximation by averaging](https://www.researchgate.net/profile/Boris_Polyak2/publication/236736831_Acceleration_of_stochastic_approximation_by_averaging_SIAM_J_Control_Optim_30_838-855/links/0f31753227e964baab000000.pdf)"
