@@ -195,8 +195,9 @@ class Optimizer:
 
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
-SCGradRequest = namedtuple(
-    'SCGradRequest', 'resp img roll start content_layers style_layers content_weight style_weight')
+SCGradRequest = namedtuple('SCGradRequest',
+                           '''resp img roll start content_layers style_layers dd_layers
+                           content_weight style_weight dd_weight''')
 SCGradResponse = namedtuple('SCGradResponse', 'resp grad')
 SetFeaturesAndGrams = namedtuple('SetFeaturesAndGrams', 'features grams')
 
@@ -255,7 +256,7 @@ class TileWorker:
                 self.model.roll(req.roll, jitter_scale=1)
                 grad = self.model.eval_sc_grad_tile(
                     req.img.array, req.start, layers, req.content_layers, req.style_layers,
-                    req.content_weight, req.style_weight)
+                    req.dd_layers, req.content_weight, req.style_weight, req.dd_weight)
                 req.img.unlink()
                 self.model.roll(-req.roll, jitter_scale=1)
                 self.resp_q.put(SCGradResponse(req.resp, SharedNDArray.copy(grad)))
@@ -466,8 +467,8 @@ class CaffeModel:
 
         return layers
 
-    def eval_sc_grad_tile(self, img, start, layers, content_layers, style_layers,
-                          content_weight, style_weight):
+    def eval_sc_grad_tile(self, img, start, layers, content_layers, style_layers, dd_layers,
+                          content_weight, style_weight, dd_weight):
         """Evaluates an individual style+content gradient tile."""
         self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
         self.data['data'] = img
@@ -486,7 +487,7 @@ class CaffeModel:
                 end = start + np.array(self.data[layer].shape[-2:])
                 feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
                 c_grad = self.data[layer] - feat
-                self.diff[layer] += normalize(c_grad)*content_weight
+                self.diff[layer] += normalize(c_grad) * content_weight
                 # content_loss += 0.5 * np.sum((self.data[layer] - self.features[layer])**2)
             if layer in style_layers:
                 current_gram = gram_matrix(self.data[layer])
@@ -494,8 +495,10 @@ class CaffeModel:
                 feat = self.data[layer].reshape((n, mh * mw))
                 s_grad = np.dot(current_gram - self.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
-                self.diff[layer] += normalize(s_grad)*style_weight
+                self.diff[layer] += normalize(s_grad) * style_weight
                 # style_loss += 0.5 * np.sum((current_gram - self.grams[layer])**2)
+            if layer in dd_layers:
+                self.diff[layer] -= normalize(self.data[layer]) * dd_weight
 
             # Run the model backward
             if i+1 == len(layers):
@@ -505,8 +508,8 @@ class CaffeModel:
 
         return self.diff['data']
 
-    def eval_sc_grad(self, pool, roll, content_layers, style_layers, content_weight, style_weight,
-                     tile_size=512):
+    def eval_sc_grad(self, pool, roll, content_layers, style_layers, dd_layers, content_weight,
+                     style_weight, dd_weight, tile_size=512):
         """Evaluates the summed style and content gradients."""
         grad = np.zeros_like(self.img)
         img_size = np.array(self.img.shape[-2:])
@@ -526,7 +529,8 @@ class CaffeModel:
                 pool.ensure_healthy()
                 pool.request(
                     SCGradRequest((start, end), SharedNDArray.copy(tile), roll, start,
-                                  content_layers, style_layers, content_weight, style_weight))
+                                  content_layers, style_layers, dd_layers,
+                                  content_weight, style_weight, dd_weight))
         pool.reset_next_worker()
         for _ in range(np.prod(ntiles)):
             (start, end), grad_tile = pool.resp_q.get()
@@ -556,6 +560,7 @@ class StyleTransfer:
         """Performs style transfer from style_image to content_image."""
         content_weight = ARGS.content_weight / max(len(ARGS.content_layers), 1)
         style_weight = 1 / max(len(ARGS.style_layers), 1)
+        dd_weight = ARGS.dd_weight / max(len(ARGS.dd_layers), 1)
 
         layers = self.model.preprocess_images(
             self.pool, content_image, style_image, ARGS.content_layers, ARGS.style_layers,
@@ -580,9 +585,9 @@ class StyleTransfer:
             self.optimizer.roll(xy * jitter_scale)
 
             # Compute style+content gradient
-            grad = self.model.eval_sc_grad(self.pool, xy * jitter_scale, ARGS.content_layers,
-                                           ARGS.style_layers, content_weight, style_weight,
-                                           tile_size=ARGS.tile_size)
+            grad = self.model.eval_sc_grad(
+                self.pool, xy * jitter_scale, ARGS.content_layers, ARGS.style_layers,
+                ARGS.dd_layers, content_weight, style_weight, dd_weight, tile_size=ARGS.tile_size)
 
             # Compute total variation gradient (from jcjohnson/neural-style)
             tv_kernel = np.float32([[[0, -1, 0], [-1, 4, -1], [0, -1, 0]]])
@@ -596,8 +601,14 @@ class StyleTransfer:
             tv_mask[:, :, -2:] = 5
             tv_grad *= tv_mask
 
-            # Compute a weighted sum of normalized gradients
-            grad = normalize(grad) + ARGS.tv_weight*tv_grad
+            # Compute p-norm regularization gradient (from jcjohnson/cnn-vis)
+            p_grad = 0
+            if ARGS.p_weight:
+                p = ARGS.p_power
+                p_grad = p * np.sign(self.model.img) * np.abs(self.model.img)**(p-1) / 255**(p-1)
+
+            # Compute a weighted sum of gradients
+            grad = normalize(grad) + ARGS.tv_weight * tv_grad + ARGS.p_weight * p_grad
 
             # In-place gradient descent update
             avg_img = self.optimizer.update(grad)
@@ -605,12 +616,6 @@ class StyleTransfer:
             # Backward jitter
             self.model.roll(-xy, jitter_scale=jitter_scale)
             self.optimizer.roll(-xy * jitter_scale)
-
-            # Apply constraints
-            mean = self.model.mean.squeeze()
-            self.model.img[0] = np.clip(self.model.img[0], -mean[0], 255-mean[0])
-            self.model.img[1] = np.clip(self.model.img[1], -mean[1], 255-mean[1])
-            self.model.img[2] = np.clip(self.model.img[2], -mean[2], 255-mean[2])
 
             # Compute update size statistic
             update_size = np.mean(np.abs(avg_img - old_img))
@@ -798,20 +803,26 @@ def parse_args():
     parser.add_argument(
         '--iterations', '-i', nargs='+', type=int, default=[300], help='the number of iterations')
     parser.add_argument(
-        '--step-size', '-st', type=ffloat, default=15, help='the step size (iteration magnitude)')
-    parser.add_argument(
         '--size', '-s', nargs='+', type=int, default=[256], help='the output size(s)')
     parser.add_argument(
         '--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor')
     parser.add_argument(
-        '--content-weight', '-cw', type=ffloat, default=0.05, help='the content image factor')
+        '--step-size', '-st', type=ffloat, default=15, help='the step size (iteration magnitude)')
     parser.add_argument(
-        '--tv-weight', '-tw', type=ffloat, default=1, help='the smoothing factor')
-    parser.add_argument(
-        '--avg-decay', type=ffloat, default=1, help='the polynomial-decay averaging parameter')
+        '--avg-decay', type=ffloat, default=1, help='the polynomial-decay averaging exponent')
     parser.add_argument(
         '--no-averaging', default=False, action='store_true',
         help='disable averaging of successive iterates')
+    parser.add_argument(
+        '--content-weight', '-cw', type=ffloat, default=0.05, help='the content image factor')
+    parser.add_argument(
+        '--dd-weight', '-dw', type=ffloat, default=0, help='the Deep Dream factor')
+    parser.add_argument(
+        '--tv-weight', '-tw', type=ffloat, default=1, help='the smoothing factor')
+    parser.add_argument(
+        '--p-weight', '-pw', type=ffloat, default=1, help='the p-norm regularization factor')
+    parser.add_argument(
+        '--p-power', '-pp', metavar='P', type=ffloat, default=6, help='the p-norm exponent')
     parser.add_argument(
         '--content-layers', nargs='*', default=['conv4_2'],
         metavar='LAYER', help='the layers to use for content')
@@ -819,6 +830,9 @@ def parse_args():
         '--style-layers', nargs='*', metavar='LAYER',
         default=['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1'],
         help='the layers to use for style')
+    parser.add_argument(
+        '--dd-layers', nargs='*', metavar='LAYER', default=[],
+        help='the layers to use for Deep Dream')
     parser.add_argument(
         '--port', '-p', type=int, default=8000,
         help='the port to use for the http server')
@@ -837,8 +851,6 @@ def parse_args():
         default=(103.939, 116.779, 123.68),
         help='the per-channel means of the model (BGR order)')
     parser.add_argument(
-        '--list-layers', action='store_true', help='list the model\'s layers')
-    parser.add_argument(
         '--save-every', metavar='N', type=int, default=0, help='save the image every n steps')
     parser.add_argument(
         '--devices', nargs='+', metavar='DEVICE', type=int, default=[0],
@@ -847,6 +859,8 @@ def parse_args():
         '--tile-size', type=int, default=512, help='the maximum rendering tile size')
     parser.add_argument(
         '--seed', type=int, default=0, help='the random seed')
+    parser.add_argument(
+        '--list-layers', action='store_true', help='list the model\'s layers')
     global ARGS  # pylint: disable=global-statement
     ARGS = parser.parse_args()
 
