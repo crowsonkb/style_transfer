@@ -9,6 +9,8 @@ Dependencies:
 
 `style_transfer` will run faster if numpy is compiled to use [MKL](https://software.intel.com/en-us/intel-mkl). If you are running Caffe on the CPU, it will also be faster if compiled with MKL. `style_transfer` uses one worker process per GPU, so the optimal value for `MKL_NUM_THREADS` is the number of real CPU cores divided by the number of GPUs.
 
+[Cloud computing images](https://github.com/crowsonkb/style_transfer/wiki/Cloud-computing-images) are available with `style_transfer` and its dependencies preinstalled.
+
 ## Features
 
 - The image is divided into tiles which are processed one per GPU at a time. Since the tiles can be sized so as to fit into GPU memory, this allows arbitrary size images to be processed&mdash;including print size. Tile seam suppression is applied after every iteration so that seams do not accumulate and become visible. (ex: `--size 2048 --tile-size 1024`)
