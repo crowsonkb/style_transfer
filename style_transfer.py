@@ -208,7 +208,7 @@ class TileWorker:
         self.req_q = req_q
         self.resp_q = resp_q
         self.model = None
-        self.model_info = (model.deploy, model.weights, model.mean, model.bgr)
+        self.model_info = (model.deploy, model.weights, model.mean, model.net_type)
         self.device = device
         self.features = None
         self.grams = None
@@ -322,13 +322,18 @@ class TileWorkerPool:
 
 class CaffeModel:
     """A Caffe neural network model."""
-    def __init__(self, deploy, weights, mean=(0, 0, 0), bgr=True, layers=None, placeholder=False):
+    def __init__(self, deploy, weights, mean=(0, 0, 0), net_type=None, layers=None,
+                 placeholder=False):
         self.deploy = deploy
         self.weights = weights
         self.mean = np.float32(mean).reshape((3, 1, 1))
-        self.bgr = bgr
+        self.bgr = True
         self.layer_list = layers
-        self.last_layer = 'pool5'
+        assert net_type is not None
+        self.net_type = net_type
+        if net_type == 'vgg':
+            self.last_layer = 'pool5'
+            self.layer_info = self.layer_info_vgg
         if not placeholder:
             import caffe
             self.net = caffe.Net(self.deploy, 1, weights=self.weights)
@@ -368,9 +373,8 @@ class CaffeModel:
         return layers
 
     @staticmethod
-    def layer_info(layer):
+    def layer_info_vgg(layer):
         """Returns the number of channels and the scale factor vs. the image for a VGG layer."""
-        assert layer.startswith('conv') or layer.startswith('pool')
         level = int(layer[4])-1
         channels = (64, 128, 256, 512, 512)[level]
         if layer.startswith('pool'):
@@ -864,11 +868,11 @@ def parse_args():
     ARGS = parser.parse_args()
 
 
-def init_model(resp_q):
+def init_model(resp_q, net_type):
     """Puts the list of model layers into resp_q. To be run in a separate process."""
     import caffe
     caffe.set_mode_cpu()
-    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean)
+    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, net_type)
     resp_q.put(model.layers())
 
 
@@ -881,9 +885,9 @@ def main():
 
     print_('Loading %s.' % ARGS.weights)
     resp_q = CTX.Queue()
-    CTX.Process(target=init_model, args=(resp_q,)).start()
+    CTX.Process(target=init_model, args=(resp_q, 'vgg')).start()
     layers = resp_q.get()
-    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, layers=layers, placeholder=True)
+    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, 'vgg', layers=layers, placeholder=True)
     transfer = StyleTransfer(model)
     if ARGS.list_layers:
         print_('Layers:')
