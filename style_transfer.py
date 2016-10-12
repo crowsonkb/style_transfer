@@ -251,7 +251,7 @@ class TileWorker:
 
             if isinstance(req, SCGradRequest):
                 for layer in reversed(self.model.layers()):
-                    if layer in req.content_layers or layer in req.style_layers:
+                    if layer in req.content_layers + req.style_layers + req.dd_layers:
                         layers.append(layer)
                 self.model.roll(req.roll, jitter_scale=1)
                 grad = self.model.eval_sc_grad_tile(
