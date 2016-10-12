@@ -576,7 +576,7 @@ class StyleTransfer:
         old_img = self.optimizer.p1.copy()
         self.step += 1
         log = open('log.csv', 'w')
-        print_('step', 'update_size', 'tv_loss', sep=',', file=log, flush=True)
+        print_('step', 'img_size', 'update_size', 'tv_loss', sep=',', file=log, flush=True)
 
         for step in range(1, iterations+1):
             # Forward jitter
@@ -620,6 +620,9 @@ class StyleTransfer:
             self.model.roll(-xy, jitter_scale=jitter_scale)
             self.optimizer.roll(-xy * jitter_scale)
 
+            # Compute image size statistic
+            img_size = np.mean(np.abs(avg_img))
+
             # Compute update size statistic
             update_size = np.mean(np.abs(avg_img - old_img))
             old_img[:] = avg_img
@@ -632,7 +635,7 @@ class StyleTransfer:
             # Record current output
             self.current_output = self.model.get_image(avg_img)
 
-            print_(step, update_size, tv_loss, sep=',', file=log, flush=True)
+            print_(step, img_size, update_size, tv_loss, sep=',', file=log, flush=True)
 
             if callback is not None:
                 callback(step=step, update_size=update_size, loss=tv_loss)
