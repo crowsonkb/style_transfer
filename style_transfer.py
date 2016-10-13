@@ -78,11 +78,10 @@ def tv_norm(x, beta=2):
     x_diff = convolve1d(x, [-1, 1], axis=2, mode='wrap')
     y_diff = convolve1d(x, [-1, 1], axis=1, mode='wrap')
     grad_norm2 = x_diff**2 + y_diff**2 + EPS
-    grad_norm_beta = grad_norm2**(beta/2)
-    loss = np.sum(grad_norm_beta)
-    dgrad_norm2 = (beta/2) * grad_norm2**(beta/2 - 1)
-    dx_diff = 2 * x_diff * dgrad_norm2
-    dy_diff = 2 * y_diff * dgrad_norm2
+    loss = np.sum(grad_norm2**(beta/2))
+    dgrad_norm_beta = (beta/2) * grad_norm2**(beta/2 - 1)
+    dx_diff = 2 * x_diff * dgrad_norm_beta
+    dy_diff = 2 * y_diff * dgrad_norm_beta
     dxy_diff = dx_diff + dy_diff
     dx_diff = roll2(dx_diff, (1, 0))
     dy_diff = roll2(dy_diff, (0, 1))
@@ -209,6 +208,57 @@ class Optimizer:
         self.step = optimizer.step
         self.xy = optimizer.xy.copy()
         self.roll(-self.xy)
+
+
+class LBFGSOptimizer:
+    def __init__(self, params, step_size=1, n_corr=10):
+        self.params = params
+        self.step_size = step_size
+        self.n_corr = n_corr
+        self.loss = None
+        self.grad = None
+        self.sk = np.zeros((0, params.size), dtype=np.float32)
+        self.yk = np.zeros((0, params.size), dtype=np.float32)
+
+    def update(self, opfunc):
+        from scipy.optimize import LbfgsInvHessProduct
+
+        if self.loss is None:
+            self.loss, self.grad = opfunc(self.params)
+
+        inv_hv = LbfgsInvHessProduct(self.sk, self.yk)
+        step = inv_hv.dot(self.grad.reshape(-1))
+        step_size = self.step_size
+
+        while True:
+            new_params = self.params - step_size * step.reshape(self.params.shape)
+            loss, grad = opfunc(new_params)
+            if loss < self.loss:
+                break
+            step_size /= 2
+            if step_size < EPS:
+                step_size = self.step_size
+                step = grad.reshape(-1)
+                new_params = self.params - step_size * grad
+                break
+        self.params[:] = new_params
+
+        s = -step_size * step
+        y = (grad - self.grad).reshape(-1)
+        if self.sk.shape[0] < self.n_corr:
+            self.sk = np.vstack((self.sk, s))
+            self.yk = np.vstack((self.yk, y))
+        else:
+            self.sk[:-1] = self.sk[1:]
+            self.yk[:-1] = self.yk[1:]
+            self.sk[-1] = s
+            self.yk[-1] = y
+
+        self.loss, self.grad = loss, grad
+        return self.params
+
+    def roll(self, xy):
+        pass
 
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
@@ -586,7 +636,7 @@ class StyleTransfer:
         self.pool.set_features_and_grams(self.model.features, self.model.grams)
         self.model.img = params
 
-        old_img = self.optimizer.p1.copy()
+        old_img = self.model.img.copy()
         self.step += 1
         log = open('log.csv', 'w')
         print_('step', 'loss', 'img_size', 'update_size', 'tv_loss', sep=',', file=log, flush=True)
@@ -604,6 +654,7 @@ class StyleTransfer:
 
             def eval_loss_and_grad(img):
                 """Returns the summed loss and gradient."""
+                old_img = self.model.img
                 self.model.img = img
 
                 # Compute style+content gradient
@@ -630,11 +681,12 @@ class StyleTransfer:
 
                 # Compute a weighted sum of gradients
                 grad = normalize(grad) + ARGS.tv_weight * tv_grad + ARGS.p_weight * p_grad
+
+                self.model.img = old_img
                 return loss, grad
 
             # In-place gradient descent update
-            loss, grad = eval_loss_and_grad(self.model.img)
-            avg_img = self.optimizer.update(grad)
+            avg_img = self.optimizer.update(eval_loss_and_grad)
 
             # Backward jitter
             self.model.roll(-xy, jitter_scale=jitter_scale)
@@ -655,7 +707,7 @@ class StyleTransfer:
             # Record current output
             self.current_output = self.model.get_image(avg_img)
 
-            print_(step, loss, img_size, update_size, tv_loss, sep=',', file=log, flush=True)
+            print_(step, 0, img_size, update_size, tv_loss, sep=',', file=log, flush=True)
 
             if callback is not None:
                 callback(step=step, update_size=update_size, loss=tv_loss)
@@ -688,9 +740,10 @@ class StyleTransfer:
 
                 # make sure the optimizer's params array shares memory with self.model.img
                 # after preprocess_image is called later
-                self.optimizer = Optimizer(
-                    self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
-                    avg_decay=ARGS.avg_decay)
+                # self.optimizer = Optimizer(
+                #     self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
+                #     avg_decay=ARGS.avg_decay)
+                self.optimizer = LBFGSOptimizer(self.model.img)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
