@@ -604,6 +604,7 @@ class StyleTransfer:
 
             def eval_loss_and_grad(img):
                 """Returns the summed loss and gradient."""
+                old_img = self.model.img
                 self.model.img = img
 
                 # Compute style+content gradient
@@ -630,6 +631,8 @@ class StyleTransfer:
 
                 # Compute a weighted sum of gradients
                 grad = normalize(grad) + ARGS.tv_weight * tv_grad + ARGS.p_weight * p_grad
+
+                self.model.img = old_img
                 return loss, grad
 
             # In-place gradient descent update
