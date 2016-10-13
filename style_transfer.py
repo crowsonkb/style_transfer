@@ -229,22 +229,28 @@ class LBFGSOptimizer:
         inv_hv = LbfgsInvHessProduct(self.sk, self.yk)
         step = inv_hv.dot(self.grad.reshape(-1))
         step_size = self.step_size
+        backtrack = 2
 
         while True:
             new_params = self.params - step_size * step.reshape(self.params.shape)
             loss, grad = opfunc(new_params)
             if loss < self.loss:
                 break
-            step_size /= 2
-            if step_size < EPS:
+            step_size /= backtrack
+            backtrack += 1
+            if step_size < 1e-4:
+                print_('Giving up on line search')
                 step_size = self.step_size
-                step = grad.reshape(-1)
-                new_params = self.params - step_size * grad
+                step = self.grad.reshape(-1)
+                new_params = self.params - step_size * self.grad
+                loss, grad = opfunc(new_params)
                 break
-        self.params[:] = new_params
+        if loss < self.loss:
+            self.params[:] = new_params
 
         s = -step_size * step
         y = (grad - self.grad).reshape(-1)
+        # y = (opfunc(self.params + s.reshape(self.params.shape))[1] - grad).reshape(-1)
         if self.sk.shape[0] < self.n_corr:
             self.sk = np.vstack((self.sk, s))
             self.yk = np.vstack((self.yk, y))
@@ -254,7 +260,9 @@ class LBFGSOptimizer:
             self.sk[-1] = s
             self.yk[-1] = y
 
-        self.loss, self.grad = loss, grad
+        if loss < self.loss:
+            self.loss, self.grad = loss, grad
+
         return self.params
 
     def roll(self, xy):
@@ -552,7 +560,7 @@ class CaffeModel:
                 end = start + np.array(self.data[layer].shape[-2:])
                 feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
                 c_grad = self.data[layer] - feat
-                loss += content_weight * np.sum((self.data[layer] - self.features[layer])**2) / 2
+                loss += np.sum((content_weight * c_grad)**2) / 2
                 self.diff[layer] += content_weight * normalize(c_grad)
             if layer in style_layers:
                 current_gram = gram_matrix(self.data[layer])
@@ -560,10 +568,10 @@ class CaffeModel:
                 feat = self.data[layer].reshape((n, mh * mw))
                 s_grad = np.dot(current_gram - self.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
-                loss += style_weight * np.sum((current_gram - self.grams[layer])**2) / 4
+                loss += np.sum((style_weight * s_grad)**2) / 2
                 self.diff[layer] += style_weight * normalize(s_grad)
             if layer in dd_layers:
-                loss -= dd_weight * np.sum(self.data[layer]**2) / 2
+                loss += np.sum((dd_weight * self.data[layer])**2) / 2
                 self.diff[layer] -= dd_weight * normalize(self.data[layer])
 
             # Run the model backward
