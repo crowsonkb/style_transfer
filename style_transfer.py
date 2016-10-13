@@ -100,8 +100,8 @@ class SharedNDArray:
             self._shm = posix_ipc.SharedMemory(name)
         else:
             self._shm = posix_ipc.SharedMemory(None, posix_ipc.O_CREX, size=size)
-        buf = mmap.mmap(self._shm.fd, size)
-        self.array = np.ndarray(shape, dtype, buf)
+        self._buf = mmap.mmap(self._shm.fd, size)
+        self.array = np.ndarray(shape, dtype, self._buf)
 
     @classmethod
     def copy(cls, arr):
@@ -122,6 +122,7 @@ class SharedNDArray:
         self._shm.unlink()
 
     def __del__(self):
+        self._buf.close()
         self._shm.close_fd()
 
     def __getstate__(self):
