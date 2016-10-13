@@ -1,6 +1,6 @@
 # style_transfer
 
-Data-parallel image stylization using Caffe. Implements [A Neural Algorithm of Artistic Style](http://arxiv.org/abs/1508.06576).
+Data-parallel image stylization using Caffe. Implements [A Neural Algorithm of Artistic Style](http://arxiv.org/abs/1508.06576) [1].
 
 Dependencies:
 - [Python](https://www.python.org) 2.7 or 3.5
@@ -16,7 +16,7 @@ Dependencies:
 - The image is divided into tiles which are processed one per GPU at a time. Since the tiles can be sized so as to fit into GPU memory, this allows arbitrary size images to be processed&mdash;including print size. Tile seam suppression is applied after every iteration so that seams do not accumulate and become visible. (ex: `--size 2048 --tile-size 1024`)
 - Images can be processed at multiple scales. For instance, `--size 512 768 1024 1536 2048 -i 100` will run 100 iterations at 512x512, then 100 at 768x768, then 100 more at 1024x1024 etc. Each scale's final iterate is used as the initial iterate for the following scale. Processing a large image at smaller scales first markedly improves output quality.
 - Multi-GPU support (ex: `--devices 0 1 2 3`). Four GPUs, for instance, can process four tiles at a time.
-- Uses Polyak-Ruppert averaging over successive iterates to reduce image noise.
+- Averages successive iterates [2] to reduce image noise.
 
 ## Known issues
 
@@ -107,14 +107,12 @@ PYTHONPATH="/path/to/caffe/python" python3 style_transfer.py <content_image> <st
 
 ## References
 
-L. Gatys, A. Ecker, M. Bethge, "[A Neural Algorithm of Artistic Style](https://arxiv.org/abs/1508.06576)"
+[1] L. Gatys, A. Ecker, M. Bethge, "[A Neural Algorithm of Artistic Style](https://arxiv.org/abs/1508.06576)"
 
-A. Mahendran, A. Vedaldi, "[Understanding Deep Image Representations by Inverting Them](https://arxiv.org/abs/1412.0035)"
+[2] O. Shamir, T. Zhang, "[Stochastic Gradient Descent for Non-smooth Optimization: Convergence Results and Optimal Averaging Schemes](http://jmlr.csail.mit.edu/proceedings/papers/v28/shamir13.pdf)"
 
-D. Kingma, J. Ba, "[Adam: A Method for Stochastic Optimization](https://arxiv.org/abs/1412.6980)"
+[3] A. Mahendran, A. Vedaldi, "[Understanding Deep Image Representations by Inverting Them](https://arxiv.org/abs/1412.0035)"
 
-B. Polyak, A. Juditsky, "[Acceleration of stochastic approximation by averaging](https://www.researchgate.net/profile/Boris_Polyak2/publication/236736831_Acceleration_of_stochastic_approximation_by_averaging_SIAM_J_Control_Optim_30_838-855/links/0f31753227e964baab000000.pdf)"
+[4] D. Kingma, J. Ba, "[Adam: A Method for Stochastic Optimization](https://arxiv.org/abs/1412.6980)"
 
-O. Shamir, T. Zhang, "[Stochastic Gradient Descent for Non-smooth Optimization: Convergence Results and Optimal Averaging Schemes](http://jmlr.csail.mit.edu/proceedings/papers/v28/shamir13.pdf)"
-
-K. Simonyan, A. Zisserman, "[Very Deep Convolutional Networks for Large-Scale Image Recognition](https://arxiv.org/abs/1409.1556)"
+[5] K. Simonyan, A. Zisserman, "[Very Deep Convolutional Networks for Large-Scale Image Recognition](https://arxiv.org/abs/1409.1556)"

@@ -74,7 +74,7 @@ def gram_matrix(feat):
 
 
 def tv_norm(x, beta=2):
-    """Computes the total variation norm and its gradient. From jcjohnson/cnn-vis."""
+    """Computes the total variation norm and its gradient. From jcjohnson/cnn-vis and [3]."""
     x_diff = convolve1d(x, [-1, 1], axis=2, mode='wrap')
     y_diff = convolve1d(x, [-1, 1], axis=1, mode='wrap')
     grad_norm2 = x_diff**2 + y_diff**2 + EPS
@@ -145,7 +145,7 @@ class LayerIndexer:
 
 
 class Optimizer:
-    """Implements the Adam gradient descent optimizer with Polyak-Ruppert averaging."""
+    """Implements the Adam gradient descent optimizer [4] with polynomial-decay averaging [2]."""
     def __init__(self, params, step_size=1, averaging=True, avg_decay=0, b1=0.9, b2=0.999):
         """Initializes the optimizer."""
         self.params = params
@@ -616,7 +616,7 @@ class StyleTransfer:
             tv_mask[:, :, -2:] = 5
             tv_grad *= tv_mask
 
-            # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis)
+            # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
             p = ARGS.p_power
             p_grad = p * np.sign(self.model.img) * np.abs(self.model.img / 127.5)**(p-1)
 
