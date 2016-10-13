@@ -347,14 +347,9 @@ class CaffeModel:
         self.bgr = True
         self.shapes = shapes
         self.net_type = net_type
-        if net_type == 'vgg':
-            self.last_layer = 'pool5'
-        elif net_type == 'googlenet':
-            self.last_layer = 'pool5/7x7_s1'
-        elif net_type == 'resnet':
-            self.last_layer = 'pool5'
-        else:
-            raise ValueError('Invalid net_type')
+        self.last_layer = None
+        if shapes:
+            self.last_layer = list(shapes)[-1]
         if not placeholder:
             import caffe
             self.net = caffe.Net(self.deploy, 1, weights=self.weights)
@@ -869,8 +864,8 @@ def parse_args():
         '--mean', nargs=3, metavar=('B_MEAN', 'G_MEAN', 'R_MEAN'),
         default=(103.939, 116.779, 123.68),
         help='the per-channel means of the model (BGR order)')
-    parser.add_argument(
-        '--net-type', default='vgg', help='the type of model (vgg, googlenet, resnet)')
+    # parser.add_argument(
+    #     '--net-type', default='vgg', help='the type of model (vgg, googlenet, resnet)')
     parser.add_argument(
         '--save-every', metavar='N', type=int, default=0, help='save the image every n steps')
     parser.add_argument(
@@ -906,9 +901,9 @@ def main():
 
     print_('Loading %s.' % ARGS.weights)
     resp_q = CTX.Queue()
-    CTX.Process(target=init_model, args=(resp_q, ARGS.net_type)).start()
+    CTX.Process(target=init_model, args=(resp_q, None)).start()
     shapes = resp_q.get()
-    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, ARGS.net_type, shapes=shapes,
+    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, None, shapes=shapes,
                        placeholder=True)
     transfer = StyleTransfer(model)
     if ARGS.list_layers:
