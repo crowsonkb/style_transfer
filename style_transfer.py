@@ -553,6 +553,7 @@ class CaffeModel:
             (start, end), loss_tile, grad_tile = pool.resp_q.get()
             loss += loss_tile
             grad[:, start[0]:end[0], start[1]:end[1]] = grad_tile.array
+            grad_tile.unlink()
 
         return loss, grad
 
