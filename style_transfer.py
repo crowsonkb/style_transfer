@@ -78,11 +78,10 @@ def tv_norm(x, beta=2):
     x_diff = convolve1d(x, [-1, 1], axis=2, mode='wrap')
     y_diff = convolve1d(x, [-1, 1], axis=1, mode='wrap')
     grad_norm2 = x_diff**2 + y_diff**2 + EPS
-    grad_norm_beta = grad_norm2**(beta/2)
-    loss = np.sum(grad_norm_beta)
-    dgrad_norm2 = (beta/2) * grad_norm2**(beta/2 - 1)
-    dx_diff = 2 * x_diff * dgrad_norm2
-    dy_diff = 2 * y_diff * dgrad_norm2
+    loss = np.sum(grad_norm2**(beta/2))
+    dgrad_norm = (beta/2) * grad_norm2**(beta/2 - 1)
+    dx_diff = 2 * x_diff * dgrad_norm
+    dy_diff = 2 * y_diff * dgrad_norm
     dxy_diff = dx_diff + dy_diff
     dx_diff = roll2(dx_diff, (1, 0))
     dy_diff = roll2(dy_diff, (0, 1))
