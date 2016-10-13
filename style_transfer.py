@@ -215,7 +215,7 @@ FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
 SCGradRequest = namedtuple('SCGradRequest',
                            '''resp img roll start content_layers style_layers dd_layers
                            content_weight style_weight dd_weight''')
-SCGradResponse = namedtuple('SCGradResponse', 'resp grad')
+SCGradResponse = namedtuple('SCGradResponse', 'resp loss grad')
 SetFeaturesAndGrams = namedtuple('SetFeaturesAndGrams', 'features grams')
 
 
@@ -271,12 +271,12 @@ class TileWorker:
                     if layer in req.content_layers + req.style_layers + req.dd_layers:
                         layers.append(layer)
                 self.model.roll(req.roll, jitter_scale=1)
-                grad = self.model.eval_sc_grad_tile(
+                loss, grad = self.model.eval_sc_grad_tile(
                     req.img.array, req.start, layers, req.content_layers, req.style_layers,
                     req.dd_layers, req.content_weight, req.style_weight, req.dd_weight)
                 req.img.unlink()
                 self.model.roll(-req.roll, jitter_scale=1)
-                self.resp_q.put(SCGradResponse(req.resp, SharedNDArray.copy(grad)))
+                self.resp_q.put(SCGradResponse(req.resp, loss, SharedNDArray.copy(grad)))
 
             if isinstance(req, SetFeaturesAndGrams):
                 self.model.features = \
@@ -487,12 +487,12 @@ class CaffeModel:
         """Evaluates an individual style+content gradient tile."""
         self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
         self.data['data'] = img
+        loss = 0
 
         # Prepare gradient buffers and run the model forward
         for layer in layers:
             self.diff[layer] = 0
         self.net.forward(end=self.last_layer)
-        # content_loss, style_loss = 0, 0
 
         for i, layer in enumerate(layers):
             # Compute the content and style gradients
@@ -502,18 +502,19 @@ class CaffeModel:
                 end = start + np.array(self.data[layer].shape[-2:])
                 feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
                 c_grad = self.data[layer] - feat
-                self.diff[layer] += normalize(c_grad) * content_weight
-                # content_loss += 0.5 * np.sum((self.data[layer] - self.features[layer])**2)
+                loss += content_weight * np.sum((self.data[layer] - self.features[layer])**2) / 2
+                self.diff[layer] += content_weight * normalize(c_grad)
             if layer in style_layers:
                 current_gram = gram_matrix(self.data[layer])
                 n, mh, mw = self.data[layer].shape
                 feat = self.data[layer].reshape((n, mh * mw))
                 s_grad = np.dot(current_gram - self.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
-                self.diff[layer] += normalize(s_grad) * style_weight
-                # style_loss += 0.5 * np.sum((current_gram - self.grams[layer])**2)
+                loss += style_weight * np.sum((current_gram - self.grams[layer])**2) / 4
+                self.diff[layer] += style_weight * normalize(s_grad)
             if layer in dd_layers:
-                self.diff[layer] -= normalize(self.data[layer]) * dd_weight
+                loss -= dd_weight * np.sum(self.data[layer]**2) / 2
+                self.diff[layer] -= dd_weight * normalize(self.data[layer])
 
             # Run the model backward
             if i+1 == len(layers):
@@ -521,11 +522,12 @@ class CaffeModel:
             else:
                 self.net.backward(start=layer, end=layers[i+1])
 
-        return self.diff['data']
+        return loss, self.diff['data']
 
     def eval_sc_grad(self, pool, roll, content_layers, style_layers, dd_layers, content_weight,
-                     style_weight, dd_weight, tile_size=512):
+                     style_weight, dd_weight, tile_size):
         """Evaluates the summed style and content gradients."""
+        loss = 0
         grad = np.zeros_like(self.img)
         img_size = np.array(self.img.shape[-2:])
         ntiles = (img_size-1) // tile_size + 1
@@ -548,10 +550,11 @@ class CaffeModel:
                                   content_weight, style_weight, dd_weight))
         pool.reset_next_worker()
         for _ in range(np.prod(ntiles)):
-            (start, end), grad_tile = pool.resp_q.get()
+            (start, end), loss_tile, grad_tile = pool.resp_q.get()
+            loss += loss_tile
             grad[:, start[0]:end[0], start[1]:end[1]] = grad_tile.array
 
-        return grad
+        return loss, grad
 
     def roll(self, xy, jitter_scale=32):
         """Rolls image and feature maps."""
@@ -586,7 +589,7 @@ class StyleTransfer:
         old_img = self.optimizer.p1.copy()
         self.step += 1
         log = open('log.csv', 'w')
-        print_('step', 'img_size', 'update_size', 'tv_loss', sep=',', file=log, flush=True)
+        print_('step', 'loss', 'img_size', 'update_size', 'tv_loss', sep=',', file=log, flush=True)
 
         for step in range(1, iterations+1):
             # Forward jitter
@@ -599,31 +602,38 @@ class StyleTransfer:
             self.model.roll(xy, jitter_scale=jitter_scale)
             self.optimizer.roll(xy * jitter_scale)
 
-            # Compute style+content gradient
-            grad = self.model.eval_sc_grad(
-                self.pool, xy * jitter_scale, ARGS.content_layers, ARGS.style_layers,
-                ARGS.dd_layers, content_weight, style_weight, dd_weight, tile_size=ARGS.tile_size)
+            def eval_loss_and_grad(img):
+                """Returns the summed loss and gradient."""
+                self.model.img = img
 
-            # Compute total variation gradient
-            tv_loss, tv_grad = tv_norm(self.model.img, beta=ARGS.tv_power)
-            tv_grad /= 255**(ARGS.tv_power-1)
+                # Compute style+content gradient
+                loss, grad = self.model.eval_sc_grad(
+                    self.pool, xy * jitter_scale, ARGS.content_layers, ARGS.style_layers,
+                    ARGS.dd_layers, content_weight, style_weight, dd_weight, ARGS.tile_size)
 
-            # Selectively blur edges more to obscure jitter and tile seams
-            tv_mask = np.ones_like(tv_grad)
-            tv_mask[:, :2, :] = 5
-            tv_mask[:, -2:, :] = 5
-            tv_mask[:, :, :2] = 5
-            tv_mask[:, :, -2:] = 5
-            tv_grad *= tv_mask
+                # Compute total variation gradient
+                tv_loss, tv_grad = tv_norm(self.model.img / 255, beta=ARGS.tv_power)
+                loss += ARGS.tv_weight * tv_loss
 
-            # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
-            p = ARGS.p_power
-            p_grad = p * np.sign(self.model.img) * np.abs(self.model.img / 127.5)**(p-1)
+                # Selectively blur edges more to obscure jitter and tile seams
+                tv_mask = np.ones_like(tv_grad)
+                tv_mask[:, :2, :] = 5
+                tv_mask[:, -2:, :] = 5
+                tv_mask[:, :, :2] = 5
+                tv_mask[:, :, -2:] = 5
+                tv_grad *= tv_mask
 
-            # Compute a weighted sum of gradients
-            grad = normalize(grad) + ARGS.tv_weight * tv_grad + ARGS.p_weight * p_grad
+                # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
+                p = ARGS.p_power
+                loss += ARGS.p_weight * np.sum(np.abs(self.model.img / 127.5)**p)
+                p_grad = p * np.sign(self.model.img) * np.abs(self.model.img / 127.5)**(p-1)
+
+                # Compute a weighted sum of gradients
+                grad = normalize(grad) + ARGS.tv_weight * tv_grad + ARGS.p_weight * p_grad
+                return loss, grad
 
             # In-place gradient descent update
+            loss, grad = eval_loss_and_grad(self.model.img)
             avg_img = self.optimizer.update(grad)
 
             # Backward jitter
@@ -637,13 +647,18 @@ class StyleTransfer:
             update_size = np.mean(np.abs(avg_img - old_img))
             old_img[:] = avg_img
 
+            # Compute total variation statistic
+            x_diff = convolve1d(avg_img, [-1, 1], axis=2, mode='wrap')
+            y_diff = convolve1d(avg_img, [-1, 1], axis=1, mode='wrap')
+            tv_loss = np.sum(x_diff**2 + y_diff**2) / avg_img.size
+
             # Record current output
             self.current_output = self.model.get_image(avg_img)
 
-            print_(step, img_size, update_size, tv_loss, sep=',', file=log, flush=True)
+            print_(step, loss, img_size, update_size, tv_loss, sep=',', file=log, flush=True)
 
             if callback is not None:
-                callback(step=step, update_size=update_size, loss=tv_loss / avg_img.size)
+                callback(step=step, update_size=update_size, loss=tv_loss)
 
         return self.current_output, self.model.get_image()
 
