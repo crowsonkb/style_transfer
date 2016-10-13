@@ -501,7 +501,7 @@ class CaffeModel:
                 end = start + np.array(self.data[layer].shape[-2:])
                 feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
                 c_grad = self.data[layer] - feat
-                loss += content_weight * np.sum((self.data[layer] - self.features[layer])**2) / 2
+                loss += content_weight * np.sum((self.data[layer] - feat)**2) / 2
                 self.diff[layer] += content_weight * normalize(c_grad)
             if layer in style_layers:
                 current_gram = gram_matrix(self.data[layer])
