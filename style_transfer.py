@@ -211,11 +211,9 @@ class Optimizer:
 
 
 class LBFGSOptimizer:
-    def __init__(self, params, step_size=1, n_corr=10):
+    def __init__(self, params, n_corr=10):
         self.params = params
-        self.step_size = step_size
         self.n_corr = n_corr
-        self.loss = None
         self.grad = None
         self.sk = np.zeros((0, params.size), dtype=np.float32)
         self.yk = np.zeros((0, params.size), dtype=np.float32)
@@ -223,46 +221,33 @@ class LBFGSOptimizer:
     def update(self, opfunc):
         from scipy.optimize import LbfgsInvHessProduct
 
-        if self.loss is None:
-            self.loss, self.grad = opfunc(self.params)
+        if self.grad is None:
+            _, self.grad = opfunc(self.params)
 
-        inv_hv = LbfgsInvHessProduct(self.sk, self.yk)
-        step = inv_hv.dot(self.grad.reshape(-1))
-        step_size = self.step_size
-        backtrack = 2
+        step = LbfgsInvHessProduct(self.sk, self.yk).dot(self.grad.reshape(-1))
+        step_size = 1
 
         while True:
             new_params = self.params - step_size * step.reshape(self.params.shape)
-            loss, grad = opfunc(new_params)
-            if loss < self.loss:
+            _, grad = opfunc(new_params)
+            if np.sqrt(np.sum(grad**2)) < np.sqrt(np.sum(self.grad**2)) * 1.1:
                 break
-            step_size /= backtrack
-            backtrack += 1
-            if step_size < 1e-4:
+            step_size /= 2
+            if step_size < 1e-3:
                 print_('Giving up on line search')
-                step_size = self.step_size
-                step = self.grad.reshape(-1)
-                new_params = self.params - step_size * self.grad
-                loss, grad = opfunc(new_params)
                 break
-        if loss < self.loss:
+        if np.mean(np.abs(self.params - new_params)) < 100:
             self.params[:] = new_params
 
         s = -step_size * step
         y = (grad - self.grad).reshape(-1)
-        # y = (opfunc(self.params + s.reshape(self.params.shape))[1] - grad).reshape(-1)
         if self.sk.shape[0] < self.n_corr:
-            self.sk = np.vstack((self.sk, s))
-            self.yk = np.vstack((self.yk, y))
+            self.sk, self.yk = np.vstack((self.sk, s)), np.vstack((self.yk, y))
         else:
-            self.sk[:-1] = self.sk[1:]
-            self.yk[:-1] = self.yk[1:]
-            self.sk[-1] = s
-            self.yk[-1] = y
+            self.sk[:-1], self.yk[:-1] = self.sk[1:], self.yk[1:]
+            self.sk[-1], self.yk[-1] = s, y
 
-        if loss < self.loss:
-            self.loss, self.grad = loss, grad
-
+        self.grad = grad
         return self.params
 
     def roll(self, xy):
