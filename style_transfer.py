@@ -212,8 +212,8 @@ class Optimizer:
 
 
 class LBFGSOptimizer:
-    def __init__(self, params, step_size=1, averaging=True, avg_decay=1,
-                 n_corr=10, damping=0.8):
+    def __init__(self, params, step_size=1, averaging=True, avg_decay=1, n_corr=10,
+                 damping=0.8):
         self.params = params
         self.step_size = step_size
         self.averaging = averaging
@@ -251,7 +251,10 @@ class LBFGSOptimizer:
 
         weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
         self.p1[:] = (1-weight)*self.p1 + weight*self.params
-        return self.p1
+        if self.averaging:
+            return self.p1
+        else:
+            return self.params
 
     def roll(self, xy):
         self.xy += xy
@@ -267,6 +270,8 @@ class LBFGSOptimizer:
     def set_params(self, last_iterate):
         self.step = 0
         self.params = last_iterate
+        self.grad = None
+        self.p1 = resize(self.p1, self.params.shape[-2:])
         self.sk = np.zeros((0, self.params.size), dtype=np.float32)
         self.yk = np.zeros((0, self.params.size), dtype=np.float32)
 
