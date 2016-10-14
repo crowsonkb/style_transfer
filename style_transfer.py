@@ -24,7 +24,6 @@ import numpy as np
 from PIL import Image
 import posix_ipc
 from scipy.ndimage import convolve1d
-from scipy.optimize import LbfgsInvHessProduct
 import six
 from six import print_
 from six.moves import cPickle as pickle
@@ -212,21 +211,19 @@ class Optimizer:
 
 
 class LBFGSOptimizer:
-    def __init__(self, params, step_size=1, averaging=True, avg_decay=1, n_corr=10,
-                 damping=0.8):
+    def __init__(self, params, step_size=1, averaging=True, avg_decay=1, n_corr=10):
         self.params = params
         self.step_size = step_size
         self.averaging = averaging
         assert avg_decay >= 0
         self.avg_decay = avg_decay
         self.n_corr = n_corr
-        self.damping = damping
         self.step = 0
         self.xy = np.zeros(2, dtype=np.int32)
         self.grad = None
-        self.p1 = self.params.copy()
-        self.sk = np.zeros((0, params.size), dtype=np.float32)
-        self.yk = np.zeros((0, params.size), dtype=np.float32)
+        self.p1 = params.copy()
+        self.sk = []
+        self.yk = []
 
     def update(self, opfunc):
         self.step += 1
@@ -234,19 +231,16 @@ class LBFGSOptimizer:
         if self.grad is None:
             _, self.grad = opfunc(self.params)
 
-        b = LbfgsInvHessProduct(self.sk, self.yk)
-        step = b.dot(self.grad.reshape(-1))
-
-        s = -self.step_size * step
-        self.params += s.reshape(self.params.shape)
+        s = -self.inv_hv(self.grad)
+        self.params += s * self.step_size
         _, grad = opfunc(self.params)
-        y = self.damping * (grad - self.grad).reshape(-1) + (1-self.damping) * b.dot(s)
+        y = 0.8 * (grad - self.grad + s) + 0.2 * self.inv_hv(s)
 
-        if self.sk.shape[0] < self.n_corr:
-            self.sk, self.yk = np.vstack((self.sk, s)), np.vstack((self.yk, y))
-        else:
-            self.sk[:-1], self.yk[:-1] = self.sk[1:], self.yk[1:]
-            self.sk[-1], self.yk[-1] = s, y
+        # Store curvature pair and gradient
+        self.sk.append(s)
+        self.yk.append(y)
+        if len(self.sk) == self.n_corr:
+            self.sk, self.yk = self.sk[1:], self.yk[1:]
         self.grad = grad
 
         weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
@@ -256,24 +250,41 @@ class LBFGSOptimizer:
         else:
             return self.params
 
+    def inv_hv(self, p):
+        p = p.copy()
+        alphas = []
+        for s, y in zip(reversed(self.sk), reversed(self.yk)):
+            alphas.append(np.sum(s * p) / (np.sum(s * y)) + EPS)
+            p -= alphas[-1] * y
+
+        if len(self.sk) > 0:
+            s, y = self.sk[-1], self.yk[-1]
+            p *= np.sum(s * y) / (np.sum(y * y) + EPS)
+        else:
+            p /= np.sqrt(np.mean(p**2)) + EPS
+
+        for s, y, alpha in zip(self.sk, self.yk, reversed(alphas)):
+            beta = np.sum(y * p) / (np.sum(s * y) + EPS)
+            p += (alpha - beta) * s
+
+        return p
+
     def roll(self, xy):
         self.xy += xy
         if self.grad is not None:
             self.grad[:] = roll2(self.grad, xy)
         self.p1[:] = roll2(self.p1, xy)
-        sk = self.sk.reshape((self.sk.shape[0],) + self.params.shape)
-        yk = self.yk.reshape((self.yk.shape[0],) + self.params.shape)
-        sk, yk = roll2(sk, xy), roll2(yk, xy)
-        self.sk[:] = sk.reshape((self.sk.shape[0], self.params.size))
-        self.yk[:] = yk.reshape((self.yk.shape[0], self.params.size))
+        for i in range(len(self.sk)):
+            self.sk[i][:] = roll2(self.sk[i], xy)
+            self.yk[i][:] = roll2(self.yk[i], xy)
 
     def set_params(self, last_iterate):
         self.step = 0
         self.params = last_iterate
         self.grad = None
         self.p1 = resize(self.p1, self.params.shape[-2:])
-        self.sk = np.zeros((0, self.params.size), dtype=np.float32)
-        self.yk = np.zeros((0, self.params.size), dtype=np.float32)
+        self.sk = []
+        self.yk = []
 
     def restore_state(self, optimizer):
         self.params = optimizer.params
