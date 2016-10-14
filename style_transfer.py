@@ -24,6 +24,7 @@ import numpy as np
 from PIL import Image
 import posix_ipc
 from scipy.ndimage import convolve1d
+from scipy.optimize import LbfgsInvHessProduct
 import six
 from six import print_
 from six.moves import cPickle as pickle
@@ -62,7 +63,7 @@ def resize(arr, size, method=Image.BICUBIC):
 
 def roll2(arr, xy):
     """Translates an array by the shift xy, wrapping at the edges."""
-    return np.roll(np.roll(arr, xy[0], 2), xy[1], 1)
+    return np.roll(np.roll(arr, xy[0], -1), xy[1], -2)
 
 
 def gram_matrix(feat):
@@ -211,47 +212,73 @@ class Optimizer:
 
 
 class LBFGSOptimizer:
-    def __init__(self, params, n_corr=10):
+    def __init__(self, params, step_size=1, averaging=True, avg_decay=1,
+                 n_corr=10, damping=0.8):
         self.params = params
+        self.step_size = step_size
+        self.averaging = averaging
+        assert avg_decay >= 0
+        self.avg_decay = avg_decay
         self.n_corr = n_corr
+        self.damping = damping
+        self.step = 0
+        self.xy = np.zeros(2, dtype=np.int32)
         self.grad = None
+        self.p1 = self.params.copy()
         self.sk = np.zeros((0, params.size), dtype=np.float32)
         self.yk = np.zeros((0, params.size), dtype=np.float32)
 
     def update(self, opfunc):
-        from scipy.optimize import LbfgsInvHessProduct
+        self.step += 1
 
         if self.grad is None:
             _, self.grad = opfunc(self.params)
 
-        step = LbfgsInvHessProduct(self.sk, self.yk).dot(self.grad.reshape(-1))
-        step_size = 1
+        b = LbfgsInvHessProduct(self.sk, self.yk)
+        step = b.dot(self.grad.reshape(-1))
 
-        while True:
-            new_params = self.params - step_size * step.reshape(self.params.shape)
-            _, grad = opfunc(new_params)
-            if np.sqrt(np.sum(grad**2)) < np.sqrt(np.sum(self.grad**2)) * 1.1:
-                break
-            step_size /= 2
-            if step_size < 1e-3:
-                print_('Giving up on line search')
-                break
-        if np.mean(np.abs(self.params - new_params)) < 100:
-            self.params[:] = new_params
+        s = -self.step_size * step
+        self.params += s.reshape(self.params.shape)
+        _, grad = opfunc(self.params)
+        y = self.damping * (grad - self.grad).reshape(-1) + (1-self.damping) * b.dot(s)
 
-        s = -step_size * step
-        y = (grad - self.grad).reshape(-1)
         if self.sk.shape[0] < self.n_corr:
             self.sk, self.yk = np.vstack((self.sk, s)), np.vstack((self.yk, y))
         else:
             self.sk[:-1], self.yk[:-1] = self.sk[1:], self.yk[1:]
             self.sk[-1], self.yk[-1] = s, y
-
         self.grad = grad
-        return self.params
+
+        weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
+        self.p1[:] = (1-weight)*self.p1 + weight*self.params
+        return self.p1
 
     def roll(self, xy):
-        pass
+        self.xy += xy
+        if self.grad is not None:
+            self.grad[:] = roll2(self.grad, xy)
+        self.p1[:] = roll2(self.p1, xy)
+        sk = self.sk.reshape((self.sk.shape[0],) + self.params.shape)
+        yk = self.yk.reshape((self.yk.shape[0],) + self.params.shape)
+        sk, yk = roll2(sk, xy), roll2(yk, xy)
+        self.sk[:] = sk.reshape((self.sk.shape[0], self.params.size))
+        self.yk[:] = yk.reshape((self.yk.shape[0], self.params.size))
+
+    def set_params(self, last_iterate):
+        self.step = 0
+        self.params = last_iterate
+        self.sk = np.zeros((0, self.params.size), dtype=np.float32)
+        self.yk = np.zeros((0, self.params.size), dtype=np.float32)
+
+    def restore_state(self, optimizer):
+        self.params = optimizer.params
+        self.grad = optimizer.grad
+        self.p1 = optimizer.p1
+        self.sk = optimizer.sk
+        self.yk = optimizer.yk
+        self.step = optimizer.step
+        self.xy = optimizer.xy.copy()
+        self.roll(-self.xy)
 
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
@@ -736,7 +763,9 @@ class StyleTransfer:
                 # self.optimizer = Optimizer(
                 #     self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
                 #     avg_decay=ARGS.avg_decay)
-                self.optimizer = LBFGSOptimizer(self.model.img)
+                self.optimizer = LBFGSOptimizer(
+                    self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
+                    avg_decay=ARGS.avg_decay)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
@@ -880,7 +909,7 @@ def parse_args():
     parser.add_argument(
         '--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor')
     parser.add_argument(
-        '--step-size', '-st', type=ffloat, default=15, help='the step size (iteration magnitude)')
+        '--step-size', '-st', type=ffloat, default=1, help='the step size (iteration magnitude)')
     parser.add_argument(
         '--avg-decay', type=ffloat, default=1, help='the polynomial-decay averaging exponent')
     parser.add_argument(
