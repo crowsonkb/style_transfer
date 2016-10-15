@@ -826,9 +826,12 @@ class StyleTransfer:
                 # self.optimizer = Optimizer(
                 #     self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
                 #     avg_decay=ARGS.avg_decay)
+                opt_kwargs = {}
+                if ARGS.dd_weight:
+                    opt_kwargs['c1'] = np.inf
                 self.optimizer = LBFGSOptimizer(
-                    self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
-                    avg_decay=ARGS.avg_decay)
+                    self.model.img, averaging=not ARGS.no_averaging, avg_decay=ARGS.avg_decay,
+                    **opt_kwargs)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
