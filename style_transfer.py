@@ -267,7 +267,7 @@ class LBFGSOptimizer:
             if np.sum(p * grad) < self.c2 * np.sum(p * self.grad):
                 step_min = step_size
             # Test that the growth in the loss function is acceptable
-            elif self.loss > 0 and loss > self.c1 * self.loss:
+            elif loss > self.c1 * self.loss:
                 step_max = step_size
                 self.store_curvature_pair(s, y)
             # Both hold, accept the step
@@ -843,12 +843,8 @@ class StyleTransfer:
                         self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
                         avg_decay=ARGS.avg_decay)
                 elif ARGS.optimizer == 'lbfgs':
-                    opt_kwargs = {}
-                    if ARGS.dd_weight:
-                        opt_kwargs['c1'] = np.inf
                     self.optimizer = LBFGSOptimizer(
-                        self.model.img, averaging=not ARGS.no_averaging, avg_decay=ARGS.avg_decay,
-                        **opt_kwargs)
+                        self.model.img, averaging=not ARGS.no_averaging, avg_decay=ARGS.avg_decay)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
