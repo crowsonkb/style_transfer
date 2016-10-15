@@ -212,7 +212,7 @@ class Optimizer:
 
 class LBFGSOptimizer:
     def __init__(self, params, step_size=1, averaging=True, avg_decay=1, n_corr=10,
-                 c1=1.1, c2=0.9):
+                 c1=1.1, c2=0.9, max_ls_fevals=10):
         self.params = params
         self.step_size = step_size
         self.averaging = averaging
@@ -221,6 +221,7 @@ class LBFGSOptimizer:
         self.n_corr = n_corr
         self.c1 = c1
         self.c2 = c2
+        self.max_ls_fevals = max_ls_fevals
 
         self.step = 0
         self.xy = np.zeros(2, dtype=np.int32)
@@ -236,25 +237,41 @@ class LBFGSOptimizer:
         if self.step == 1:
             self.loss, self.grad = opfunc(self.params)
 
-        # Backtracking line search. The Armijo rule is invalid due to gradient normalization, and
-        # the problem is nonconvex, so enforce a simple rule bounding the growth in the loss
-        # function and the weak Wolfe curvature condition.
-        step_size = self.step_size
+        # Line search. The Armijo rule is invalid due to gradient normalization, and the problem
+        # is nonsmooth, so enforce a simple rule bounding the growth in the loss function and the
+        # weak Wolfe curvature condition.
+        step_size, step_min, step_max = 1, 0, np.inf
+        ls_fevals = 0
         while True:
-            p = -self.inv_hv(self.grad)
-            s = step_size * p
-            loss, grad = opfunc(self.params + s)
-            loss_cond = loss <= self.c1 * self.loss
-            curvature_cond = np.sum(p * grad) >= self.c2 * np.sum(p * self.grad)
-            if loss_cond and curvature_cond:
-                break
-            step_size /= 2
-            if step_size < 1e-2:
-                # Give up and take a gradient descent step. These steps are assumed safe.
+            if ls_fevals == self.max_ls_fevals:
+                # Give up and take a gradient descent step instead.
                 print_('Giving up on line search.')
                 s = -self.step_size * self.grad
                 loss, grad = opfunc(self.params + s)
                 break
+
+            # Compute search direction, step, loss, and gradient.
+            p = -self.inv_hv(self.grad)
+            s = step_size * p
+            loss, grad = opfunc(self.params + s)
+            ls_fevals += 1
+
+            # Test that the growth in the loss function is acceptable.
+            if loss > self.c1 * self.loss:
+                step_max = step_size
+            # Test that the weak Wolfe curvature condition holds.
+            elif np.sum(p * grad) < self.c2 * np.sum(p * self.grad):
+                step_min = step_size
+            # Both hold, accept the step.
+            else:
+                print_('Step size:', step_size)
+                break
+
+            # Compute new step size
+            if step_max < np.inf:
+                step_size = (step_min + step_max) / 2
+            else:
+                step_size *= 2
 
         # Update params and compute y
         self.params += s
