@@ -264,7 +264,6 @@ class LBFGSOptimizer:
                 step_min = step_size
             # Both hold, accept the step.
             else:
-                print_('Step size:', step_size)
                 break
 
             # Compute new step size
