@@ -261,7 +261,7 @@ class LBFGSOptimizer:
             if np.sum(p * grad) < self.c2 * np.sum(p * self.grad):
                 step_min = step_size
             # Test that the growth in the loss function is acceptable
-            elif loss > self.c1 * self.loss:
+            elif self.loss > 0 and loss > self.c1 * self.loss:
                 step_max = step_size
                 self.store_curvature_pair(s, y)
             # Both hold, accept the step
