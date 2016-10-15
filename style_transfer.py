@@ -211,15 +211,20 @@ class Optimizer:
 
 
 class LBFGSOptimizer:
-    def __init__(self, params, step_size=1, averaging=True, avg_decay=1, n_corr=10):
+    def __init__(self, params, step_size=1, averaging=True, avg_decay=1, n_corr=10,
+                 c1=1.1, c2=0.9):
         self.params = params
         self.step_size = step_size
         self.averaging = averaging
         assert avg_decay >= 0
         self.avg_decay = avg_decay
         self.n_corr = n_corr
+        self.c1 = c1
+        self.c2 = c2
+
         self.step = 0
         self.xy = np.zeros(2, dtype=np.int32)
+        self.loss = None
         self.grad = None
         self.p1 = params.copy()
         self.sk = []
@@ -228,21 +233,44 @@ class LBFGSOptimizer:
     def update(self, opfunc):
         self.step += 1
 
-        if self.grad is None:
-            _, self.grad = opfunc(self.params)
+        if self.step == 1:
+            self.loss, self.grad = opfunc(self.params)
 
-        s = -self.inv_hv(self.grad)
-        self.params += s * self.step_size
-        _, grad = opfunc(self.params)
-        y = 0.8 * (grad - self.grad + s) + 0.2 * self.inv_hv(s)
+        # Backtracking line search. The Armijo rule is invalid due to gradient normalization, and
+        # the problem is nonconvex, so enforce a simple rule bounding the growth in the loss
+        # function and the weak Wolfe curvature condition.
+        step_size = self.step_size
+        while True:
+            p = -self.inv_hv(self.grad)
+            s = step_size * p
+            loss, grad = opfunc(self.params + s)
+            loss_cond = loss <= self.c1 * self.loss
+            curvature_cond = np.sum(p * grad) >= self.c2 * np.sum(p * self.grad)
+            if loss_cond and curvature_cond:
+                break
+            step_size /= 2
+            if step_size < 1e-2:
+                # Give up and take a gradient descent step. These steps are assumed safe.
+                print_('Giving up on line search.')
+                s = -self.step_size * self.grad
+                loss, grad = opfunc(self.params + s)
+                break
+
+        # Update params and compute y
+        self.params += s
+        y = grad - self.grad
 
         # Store curvature pair and gradient
-        self.sk.append(s)
-        self.yk.append(y)
-        if len(self.sk) == self.n_corr:
+        if np.sum(s * y) > EPS:
+            self.sk.append(s)
+            self.yk.append(y)
+        else:
+            print_('Skipping curvature pair update.')
+        if len(self.sk) > self.n_corr:
             self.sk, self.yk = self.sk[1:], self.yk[1:]
-        self.grad = grad
+        self.loss, self.grad = loss, grad
 
+        # Polynomial-decay averaging
         weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
         self.p1[:] = (1-weight)*self.p1 + weight*self.params
         if self.averaging:
@@ -281,6 +309,7 @@ class LBFGSOptimizer:
     def set_params(self, last_iterate):
         self.step = 0
         self.params = last_iterate
+        self.loss = None
         self.grad = None
         self.p1 = resize(self.p1, self.params.shape[-2:])
         self.sk = []
@@ -288,6 +317,7 @@ class LBFGSOptimizer:
 
     def restore_state(self, optimizer):
         self.params = optimizer.params
+        self.loss = optimizer.loss
         self.grad = optimizer.grad
         self.p1 = optimizer.p1
         self.sk = optimizer.sk
@@ -596,7 +626,7 @@ class CaffeModel:
                 feat = self.data[layer].reshape((n, mh * mw))
                 s_grad = np.dot(current_gram - self.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
-                loss += np.sum((style_weight * s_grad)**2) / 2
+                loss += style_weight * np.sum((current_gram - self.grams[layer])**2) / 4
                 self.diff[layer] += style_weight * normalize(s_grad)
             if layer in dd_layers:
                 loss += np.sum((dd_weight * self.data[layer])**2) / 2
