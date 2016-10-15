@@ -287,7 +287,7 @@ class LBFGSOptimizer:
         if self.averaging:
             return self.p1
         else:
-            return self.params
+            return self.params, loss
 
     def store_curvature_pair(self, s, y):
         self.sk.append(s)
@@ -635,7 +635,7 @@ class CaffeModel:
                 end = start + np.array(self.data[layer].shape[-2:])
                 feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
                 c_grad = self.data[layer] - feat
-                loss += np.sum((content_weight * c_grad)**2) / 2
+                loss += content_weight * np.sum(c_grad**2) / 2
                 self.diff[layer] += content_weight * normalize(c_grad)
             if layer in style_layers:
                 current_gram = gram_matrix(self.data[layer])
@@ -646,7 +646,7 @@ class CaffeModel:
                 loss += style_weight * np.sum((current_gram - self.grams[layer])**2) / 4
                 self.diff[layer] += style_weight * normalize(s_grad)
             if layer in dd_layers:
-                loss += np.sum((dd_weight * self.data[layer])**2) / 2
+                loss -= dd_weight * np.sum(self.data[layer]**2) / 2
                 self.diff[layer] -= dd_weight * normalize(self.data[layer])
 
             # Run the model backward
@@ -769,7 +769,7 @@ class StyleTransfer:
                 return loss, grad
 
             # In-place gradient descent update
-            avg_img = self.optimizer.update(eval_loss_and_grad)
+            avg_img, loss = self.optimizer.update(eval_loss_and_grad)
 
             # Backward jitter
             self.model.roll(-xy, jitter_scale=jitter_scale)
@@ -790,10 +790,12 @@ class StyleTransfer:
             # Record current output
             self.current_output = self.model.get_image(avg_img)
 
-            print_(step, 0, img_size, update_size, tv_loss, sep=',', file=log, flush=True)
+            print_(step, loss / avg_img.size, img_size, update_size, tv_loss, sep=',', file=log,
+                   flush=True)
 
             if callback is not None:
-                callback(step=step, update_size=update_size, loss=tv_loss)
+                callback(step=step, update_size=update_size, loss=loss / avg_img.size,
+                         tv_loss=tv_loss)
 
         return self.current_output, self.model.get_image()
 
@@ -862,6 +864,7 @@ class Progress:
     step = 0
     update_size = np.nan
     loss = np.nan
+    tv_loss = np.nan
 
     def __init__(self, transfer, url=None, steps=-1, save_every=0):
         self.transfer = transfer
@@ -869,11 +872,12 @@ class Progress:
         self.steps = steps
         self.save_every = save_every
 
-    def __call__(self, step=-1, update_size=np.nan, loss=np.nan):
+    def __call__(self, step=-1, update_size=np.nan, loss=np.nan, tv_loss=np.nan):
         this_t = timer()
         self.step += 1
         self.update_size = update_size
         self.loss = loss
+        self.tv_loss = tv_loss
         if self.save_every and self.step % self.save_every == 0:
             self.transfer.current_output.save('out_%04d.png' % self.step)
         if self.step == 1:
@@ -881,8 +885,8 @@ class Progress:
                 webbrowser.open(self.url)
         else:
             self.t = this_t - self.prev_t
-        print_('Step %d, time: %.2f s, mean update: %.2f, mean tv loss: %.1f' %
-               (step, self.t, update_size, loss), flush=True)
+        print_('Step %d, time: %.2f s, mean update: %.2f, mean loss: %.1f, mean tv loss: %.1f' %
+               (step, self.t, update_size, loss, tv_loss), flush=True)
         self.prev_t = this_t
 
 
@@ -905,8 +909,11 @@ class ProgressHandler(BaseHTTPRequestHandler):
     #out {image-rendering: -webkit-optimize-contrast;}</style>
     <h1>Style transfer</h1>
     <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
-    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, mean update: %(update_size).2f,
-    mean tv loss: %(loss).1f
+    <p>Step %(step)d/%(steps)d,
+    <br>time: %(t).2f s/step
+    <br>mean update: %(update_size).2f
+    <br>mean loss: %(loss).1f
+    <br>mean tv loss: %(tv_loss).1f
     """
 
     def do_GET(self):
@@ -924,6 +931,7 @@ class ProgressHandler(BaseHTTPRequestHandler):
                 't': self.server.progress.t,
                 'update_size': self.server.progress.update_size,
                 'loss': self.server.progress.loss,
+                'tv_loss': self.server.progress.tv_loss,
                 'w': self.server.transfer.current_output.size[0] / scale,
                 'h': self.server.transfer.current_output.size[1] / scale,
             }).encode())
