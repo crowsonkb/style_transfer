@@ -17,6 +17,8 @@ Dependencies:
 - Images can be processed at multiple scales. For instance, `--size 512 768 1024 1536 2048 -i 100` will run 100 iterations at 512x512, then 100 at 768x768, then 100 more at 1024x1024 etc. Each scale's final iterate is used as the initial iterate for the following scale. Processing a large image at smaller scales first markedly improves output quality.
 - Multi-GPU support (ex: `--devices 0 1 2 3`). Four GPUs, for instance, can process four tiles at a time.
 - Averages successive iterates [2] to reduce image noise.
+- Can perform simultaneous Deep Dream and image stylization.
+- Adam (gradient descent) [4] and L-BFGS [6] optimizers. L-BFGS is used with a nonmonotone line search that has been adapted for nonsmooth, nonconvex problems.
 
 ## Known issues
 
