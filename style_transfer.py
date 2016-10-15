@@ -1040,8 +1040,6 @@ def parse_args():
         '--mean', nargs=3, metavar=('B_MEAN', 'G_MEAN', 'R_MEAN'),
         default=(103.939, 116.779, 123.68),
         help='the per-channel means of the model (BGR order)')
-    # parser.add_argument(
-    #     '--net-type', default='vgg', help='the type of model (vgg, googlenet, resnet)')
     parser.add_argument(
         '--save-every', metavar='N', type=int, default=0, help='save the image every n steps')
     parser.add_argument(
