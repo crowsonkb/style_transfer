@@ -215,7 +215,7 @@ class AdamOptimizer:
 
 class LBFGSOptimizer:
     """Implements the L-BFGS quasi-Newton optimizer [6] with polynomial-decay averaging [2]."""
-    def __init__(self, params, step_size=1, averaging=True, avg_decay=1, n_corr=10, c1=1.01, c2=0.9,
+    def __init__(self, params, step_size=1, averaging=True, avg_decay=1, n_corr=10, c1=1.02, c2=0.9,
                  max_ls_fevals=10):
         """Initializes the optimizer."""
         self.params = params
@@ -1031,10 +1031,10 @@ def parse_args():
     parser.add_argument(
         '--hidpi', action='store_true', help='display the image at 2x scale in the browser')
     parser.add_argument(
-        '--model', default='VGG_ILSVRC_19_layers_deploy.prototxt',
+        '--model', default='vgg19.prototxt',
         help='the Caffe deploy.prototxt for the model to use')
     parser.add_argument(
-        '--weights', default='VGG_ILSVRC_19_layers.caffemodel',
+        '--weights', default='vgg19.caffemodel',
         help='the Caffe .caffemodel for the model to use')
     parser.add_argument(
         '--mean', nargs=3, metavar=('B_MEAN', 'G_MEAN', 'R_MEAN'),

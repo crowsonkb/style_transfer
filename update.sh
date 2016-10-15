@@ -9,7 +9,7 @@ if [[ ! -e .updated ]]; then
   touch .updated
   echo 'Running style_transfer init/update.'
   git pull
-  if [[ ! -e VGG_ILSVRC_19_layers.caffemodel ]]; then
+  if [[ ! -e vgg19.caffemodel ]]; then
     ./download_model.sh
   fi
 fi
