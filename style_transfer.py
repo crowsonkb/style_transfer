@@ -211,8 +211,8 @@ class Optimizer:
 
 
 class LBFGSOptimizer:
-    def __init__(self, params, step_size=1, averaging=True, avg_decay=1, n_corr=10,
-                 c1=1.1, c2=0.9, max_ls_fevals=10):
+    def __init__(self, params, step_size=1, averaging=True, avg_decay=1, n_corr=10, c1=1.1, c2=0.9,
+                 max_ls_fevals=10):
         self.params = params
         self.step_size = step_size
         self.averaging = averaging
