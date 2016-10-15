@@ -254,14 +254,16 @@ class LBFGSOptimizer:
             p = -self.inv_hv(self.grad)
             s = step_size * p
             loss, grad = opfunc(self.params + s)
+            y = grad - self.grad
             ls_fevals += 1
 
-            # Test that the growth in the loss function is acceptable
-            if loss > self.c1 * self.loss:
-                step_max = step_size
             # Test that the weak Wolfe curvature condition holds.
-            elif np.sum(p * grad) < self.c2 * np.sum(p * self.grad):
+            if np.sum(p * grad) < self.c2 * np.sum(p * self.grad):
                 step_min = step_size
+            # Test that the growth in the loss function is acceptable
+            elif loss > self.c1 * self.loss:
+                step_max = step_size
+                self.store_curvature_pair(s, y)
             # Both hold, accept the step.
             else:
                 break
@@ -272,18 +274,11 @@ class LBFGSOptimizer:
             else:
                 step_size *= 2
 
-        # Update params and compute y
+        # Update params
         self.params += s
-        y = grad - self.grad
 
         # Store curvature pair and gradient
-        if np.sum(s * y) > EPS:
-            self.sk.append(s)
-            self.yk.append(y)
-        else:
-            print_('Skipping curvature pair update.')
-        if len(self.sk) > self.n_corr:
-            self.sk, self.yk = self.sk[1:], self.yk[1:]
+        self.store_curvature_pair(s, y)
         self.loss, self.grad = loss, grad
 
         # Polynomial-decay averaging
@@ -293,6 +288,12 @@ class LBFGSOptimizer:
             return self.p1
         else:
             return self.params
+
+    def store_curvature_pair(self, s, y):
+        self.sk.append(s)
+        self.yk.append(y)
+        if len(self.sk) > self.n_corr:
+            self.sk, self.yk = self.sk[1:], self.yk[1:]
 
     def inv_hv(self, p):
         p = p.copy()
