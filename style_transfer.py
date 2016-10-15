@@ -144,7 +144,7 @@ class LayerIndexer:
         getattr(self.net.blobs[key], self.attr)[0] = value
 
 
-class Optimizer:
+class AdamOptimizer:
     """Implements the Adam gradient descent optimizer [4] with polynomial-decay averaging [2]."""
     def __init__(self, params, step_size=1, averaging=True, avg_decay=0, b1=0.9, b2=0.999):
         """Initializes the optimizer."""
@@ -161,9 +161,10 @@ class Optimizer:
         self.g2 = np.zeros_like(params)
         self.p1 = params.copy()
 
-    def update(self, grad):
+    def update(self, opfunc):
         """Returns a step's parameter update given its gradient."""
         self.step += 1
+        loss, grad = opfunc(self.params)
 
         # Adam
         self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
@@ -177,9 +178,9 @@ class Optimizer:
         weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
         self.p1[:] = (1-weight)*self.p1 + weight*self.params
         if self.averaging:
-            return self.p1
+            return self.p1, loss
         else:
-            return self.params
+            return self.params, loss
 
     def roll(self, xy):
         """Rolls the optimizer's internal state."""
@@ -286,7 +287,7 @@ class LBFGSOptimizer:
         weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
         self.p1[:] = (1-weight)*self.p1 + weight*self.params
         if self.averaging:
-            return self.p1
+            return self.p1, loss
         else:
             return self.params, loss
 
@@ -827,15 +828,17 @@ class StyleTransfer:
 
                 # make sure the optimizer's params array shares memory with self.model.img
                 # after preprocess_image is called later
-                # self.optimizer = Optimizer(
-                #     self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
-                #     avg_decay=ARGS.avg_decay)
-                opt_kwargs = {}
-                if ARGS.dd_weight:
-                    opt_kwargs['c1'] = np.inf
-                self.optimizer = LBFGSOptimizer(
-                    self.model.img, averaging=not ARGS.no_averaging, avg_decay=ARGS.avg_decay,
-                    **opt_kwargs)
+                if ARGS.optimizer == 'adam':
+                    self.optimizer = AdamOptimizer(
+                        self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
+                        avg_decay=ARGS.avg_decay)
+                elif ARGS.optimizer == 'lbfgs':
+                    opt_kwargs = {}
+                    if ARGS.dd_weight:
+                        opt_kwargs['c1'] = np.inf
+                    self.optimizer = LBFGSOptimizer(
+                        self.model.img, averaging=not ARGS.no_averaging, avg_decay=ARGS.avg_decay,
+                        **opt_kwargs)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
@@ -985,7 +988,11 @@ def parse_args():
     parser.add_argument(
         '--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor')
     parser.add_argument(
-        '--step-size', '-st', type=ffloat, default=1, help='the step size (iteration magnitude)')
+        '--optimizer', '-o', default='adam', choices=['adam', 'lbfgs'],
+        help='the optimizer algorithm')
+    parser.add_argument(
+        '--step-size', '-st', type=ffloat, default=15,
+        help='the Adam step size (iteration magnitude)')
     parser.add_argument(
         '--avg-decay', type=ffloat, default=1, help='the polynomial-decay averaging exponent')
     parser.add_argument(
