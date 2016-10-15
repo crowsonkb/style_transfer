@@ -890,7 +890,7 @@ class Progress:
                 webbrowser.open(self.url)
         else:
             self.t = this_t - self.prev_t
-        print_('Step %d, time: %.2f s, mean update: %.2f, mean loss: %.1f, mean tv loss: %.1f' %
+        print_('Step %d, time: %.2f s, update: %.2f, loss: %.1f, tv: %.1f' %
                (step, self.t, update_size, loss, tv_loss), flush=True)
         self.prev_t = this_t
 
@@ -914,11 +914,8 @@ class ProgressHandler(BaseHTTPRequestHandler):
     #out {image-rendering: -webkit-optimize-contrast;}</style>
     <h1>Style transfer</h1>
     <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
-    <p>Step %(step)d/%(steps)d,
-    <br>time: %(t).2f s/step
-    <br>mean update: %(update_size).2f
-    <br>mean loss: %(loss).1f
-    <br>mean tv loss: %(tv_loss).1f
+    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss).1f,
+    tv: %(tv_loss).1f
     """
 
     def do_GET(self):
