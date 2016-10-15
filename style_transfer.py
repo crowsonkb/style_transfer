@@ -79,9 +79,9 @@ def tv_norm(x, beta=2):
     y_diff = convolve1d(x, [-1, 1], axis=1, mode='wrap')
     grad_norm2 = x_diff**2 + y_diff**2 + EPS
     loss = np.sum(grad_norm2**(beta/2))
-    dgrad_norm_beta = (beta/2) * grad_norm2**(beta/2 - 1)
-    dx_diff = 2 * x_diff * dgrad_norm_beta
-    dy_diff = 2 * y_diff * dgrad_norm_beta
+    dgrad_norm = (beta/2) * grad_norm2**(beta/2 - 1)
+    dx_diff = 2 * x_diff * dgrad_norm
+    dy_diff = 2 * y_diff * dgrad_norm
     dxy_diff = dx_diff + dy_diff
     dx_diff = roll2(dx_diff, (1, 0))
     dy_diff = roll2(dy_diff, (0, 1))
@@ -100,8 +100,8 @@ class SharedNDArray:
             self._shm = posix_ipc.SharedMemory(name)
         else:
             self._shm = posix_ipc.SharedMemory(None, posix_ipc.O_CREX, size=size)
-        buf = mmap.mmap(self._shm.fd, size)
-        self.array = np.ndarray(shape, dtype, buf)
+        self._buf = mmap.mmap(self._shm.fd, size)
+        self.array = np.ndarray(shape, dtype, self._buf)
 
     @classmethod
     def copy(cls, arr):
@@ -122,6 +122,7 @@ class SharedNDArray:
         self._shm.unlink()
 
     def __del__(self):
+        self._buf.close()
         self._shm.close_fd()
 
     def __getstate__(self):
@@ -686,6 +687,7 @@ class CaffeModel:
             (start, end), loss_tile, grad_tile = pool.resp_q.get()
             loss += loss_tile
             grad[:, start[0]:end[0], start[1]:end[1]] = grad_tile.array
+            grad_tile.unlink()
 
         return loss, grad
 
