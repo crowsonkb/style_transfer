@@ -162,7 +162,7 @@ class AdamOptimizer:
         self.p1 = params.copy()
 
     def update(self, opfunc):
-        """Returns a step's parameter update given its gradient."""
+        """Returns a step's parameter update given a loss/gradient evaluation function."""
         self.step += 1
         loss, grad = opfunc(self.params)
 
@@ -202,7 +202,8 @@ class AdamOptimizer:
         self.p1 = resize(self.p1, hw)
 
     def restore_state(self, optimizer):
-        """Given an Optimizer instance, restores internal state from it."""
+        """Given an AdamOptimizer instance, restores internal state from it."""
+        assert isinstance(optimizer, AdamOptimizer)
         self.params = optimizer.params
         self.g1 = optimizer.g1
         self.g2 = optimizer.g2
@@ -213,8 +214,10 @@ class AdamOptimizer:
 
 
 class LBFGSOptimizer:
+    """Implements the L-BFGS quasi-Newton optimizer with polynomial-decay averaging [2]."""
     def __init__(self, params, step_size=1, averaging=True, avg_decay=1, n_corr=10, c1=1.01, c2=0.9,
                  max_ls_fevals=10):
+        """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
         self.averaging = averaging
@@ -234,6 +237,7 @@ class LBFGSOptimizer:
         self.yk = []
 
     def update(self, opfunc):
+        """Returns a step's parameter update given a loss/gradient evaluation function."""
         self.step += 1
 
         if self.step == 1:
@@ -292,12 +296,14 @@ class LBFGSOptimizer:
             return self.params, loss
 
     def store_curvature_pair(self, s, y):
+        """Updates the L-BFGS memory with a new curvature pair."""
         self.sk.append(s)
         self.yk.append(y)
         if len(self.sk) > self.n_corr:
             self.sk, self.yk = self.sk[1:], self.yk[1:]
 
     def inv_hv(self, p):
+        """Computes the product of a vector with an approximation of the inverse Hessian."""
         p = p.copy()
         alphas = []
         for s, y in zip(reversed(self.sk), reversed(self.yk)):
@@ -317,6 +323,7 @@ class LBFGSOptimizer:
         return p
 
     def roll(self, xy):
+        """Rolls the optimizer's internal state."""
         self.xy += xy
         if self.grad is not None:
             self.grad[:] = roll2(self.grad, xy)
@@ -326,6 +333,7 @@ class LBFGSOptimizer:
             self.yk[i][:] = roll2(self.yk[i], xy)
 
     def set_params(self, last_iterate):
+        """Sets params to the supplied array, clearing the optimizer's internal state."""
         self.step = 0
         self.params = last_iterate
         self.loss = None
@@ -335,6 +343,8 @@ class LBFGSOptimizer:
         self.yk = []
 
     def restore_state(self, optimizer):
+        """Given an LBFGSOptimizer instance, restores internal state from it."""
+        assert isinstance(optimizer, LBFGSOptimizer)
         self.params = optimizer.params
         self.loss = optimizer.loss
         self.grad = optimizer.grad
