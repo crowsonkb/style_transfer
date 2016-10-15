@@ -239,24 +239,24 @@ class LBFGSOptimizer:
 
         # Line search. The Armijo rule is invalid due to gradient normalization, and the problem
         # is nonsmooth, so enforce a simple rule bounding the growth in the loss function and the
-        # weak Wolfe curvature condition.
+        # weak Wolfe curvature condition
         step_size, step_min, step_max = 1, 0, np.inf
         ls_fevals = 0
         while True:
             if ls_fevals == self.max_ls_fevals:
-                # Give up and take a gradient descent step instead.
+                # Give up and take a gradient descent step instead
                 print_('Giving up on line search.')
                 s = -self.step_size * self.grad
                 loss, grad = opfunc(self.params + s)
                 break
 
-            # Compute search direction, step, loss, and gradient.
+            # Compute search direction, step, loss, and gradient
             p = -self.inv_hv(self.grad)
             s = step_size * p
             loss, grad = opfunc(self.params + s)
             ls_fevals += 1
 
-            # Test that the growth in the loss function is acceptable.
+            # Test that the growth in the loss function is acceptable
             if loss > self.c1 * self.loss:
                 step_max = step_size
             # Test that the weak Wolfe curvature condition holds.
