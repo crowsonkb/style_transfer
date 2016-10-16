@@ -267,7 +267,7 @@ class LBFGSOptimizer:
             if np.sum(p * grad) < self.c2 * np.sum(p * self.grad):
                 step_min = step_size
             # Test that the growth in the loss function is acceptable
-            elif loss > self.c1 * self.loss:
+            elif self.loss > 0 and loss > self.c1 * self.loss:
                 step_max = step_size
                 self.store_curvature_pair(s, y)
             # Both hold, accept the step
@@ -776,6 +776,7 @@ class StyleTransfer:
                 p_grad = p * np.sign(self.model.img) * np.abs(self.model.img / 127.5)**(p-1)
 
                 # Compute a weighted sum of gradients
+                loss += ARGS.shift_loss * self.model.img.size
                 grad = normalize(grad) + ARGS.tv_weight * tv_grad + ARGS.p_weight * p_grad
 
                 self.model.img = old_img
@@ -1001,6 +1002,9 @@ def parse_args():
     parser.add_argument(
         '--no-averaging', default=False, action='store_true',
         help='disable averaging of successive iterates')
+    parser.add_argument(
+        '--shift-loss', type=ffloat, default=0,
+        help='add this value to the calculated loss. used for shifting negative loss above zero')
     parser.add_argument(
         '--content-weight', '-cw', type=ffloat, default=0.05, help='the content image factor')
     parser.add_argument(
