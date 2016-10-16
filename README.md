@@ -7,7 +7,7 @@ Dependencies:
 - [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 2.7 or 3.5
 - Python packages [numpy](http://www.numpy.org), [Pillow](https://python-pillow.org), [posix-ipc](http://semanchuk.com/philip/posix_ipc/), [scipy](http://www.scipy.org), [six](https://pythonhosted.org/six/)
 
-`style_transfer` will run faster if numpy is compiled to use [MKL](https://software.intel.com/en-us/intel-mkl). If you are running Caffe on the CPU, it will also be faster if compiled with MKL. `style_transfer` uses one worker process per GPU, so the optimal value for `MKL_NUM_THREADS` is the number of real CPU cores divided by the number of GPUs.
+`style_transfer` will run faster if NumPy is compiled to use [MKL](https://software.intel.com/en-us/intel-mkl). If you are running Caffe on the CPU, it will also be faster if compiled with MKL. `style_transfer` uses one worker process per GPU, so the optimal value for `MKL_NUM_THREADS` is the number of real CPU cores divided by the number of GPUs. The [Anaconda](https://www.continuum.io/downloads) Python distribution comes with an MKL-accelerated NumPy by default and is known to work with `style_transfer`.
 
 [Cloud computing images](https://github.com/crowsonkb/style_transfer/wiki/Cloud-computing-images) are available with `style_transfer` and its dependencies preinstalled.
 
@@ -78,33 +78,12 @@ PYTHON_LIB := /usr/lib
 
 `style_transfer` is also known to work on Ubuntu 14.04 with Python 3.5 built from source.
 
-### Installing style_transfer's Python dependencies
+### Installing style_transfer's Python dependencies (all systems)
 
-First, install `style_transfer`'s direct dependencies:
+Using pip:
 
 ```
 pip3 install -Ur requirements.txt
-```
-
-Then, if you haven't already, Caffe's:
-
-```
-pip3 install -U matplotlib scikit-image
-```
-
-Besides those, Caffe depends on [protobuf](https://github.com/google/protobuf), and versions of protobuf older than 3.0 do not work with Python 3&mdash;so go to the [releases page](https://github.com/google/protobuf/releases) and download the Python runtime library (example given is for version 3.0.2):
-
-```
-unzip protobuf-python-3.0.2.zip
-cd protobuf-3.0.2/python
-python3 setup.py bdist_wheel --cpp_implementation
-pip3 install -U dist/*.whl
-```
-
-You should be able to run `style_transfer` now by specifying the path to Caffe's Python bindings in the `PYTHONPATH`:
-
-```
-PYTHONPATH="/path/to/caffe/python" python3 style_transfer.py <content_image> <style_image>
 ```
 
 ## References
