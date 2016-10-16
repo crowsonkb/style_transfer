@@ -647,19 +647,19 @@ class CaffeModel:
                 end = start + np.array(self.data[layer].shape[-2:])
                 feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
                 c_grad = self.data[layer] - feat
-                loss += content_weight * np.sum(c_grad**2) / 2
-                self.diff[layer] += content_weight * normalize(c_grad)
+                loss += content_weight[layer] * np.sum(c_grad**2) / 2
+                self.diff[layer] += content_weight[layer] * normalize(c_grad)
             if layer in style_layers:
                 current_gram = gram_matrix(self.data[layer])
                 n, mh, mw = self.data[layer].shape
                 feat = self.data[layer].reshape((n, mh * mw))
                 s_grad = np.dot(current_gram - self.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
-                loss += style_weight * np.sum((current_gram - self.grams[layer])**2) / 4
-                self.diff[layer] += style_weight * normalize(s_grad)
+                loss += style_weight[layer] * np.sum((current_gram - self.grams[layer])**2) / 4
+                self.diff[layer] += style_weight[layer] * normalize(s_grad)
             if layer in dd_layers:
-                loss -= dd_weight * np.sum(self.data[layer]**2) / 2
-                self.diff[layer] -= dd_weight * normalize(self.data[layer])
+                loss -= dd_weight[layer] * np.sum(self.data[layer]**2) / 2
+                self.diff[layer] -= dd_weight[layer] * normalize(self.data[layer])
 
             # Run the model backward
             if i+1 == len(layers):
@@ -720,15 +720,31 @@ class StyleTransfer:
         self.pool = None
         self.step = 0
 
+    @staticmethod
+    def parse_weights(args, master_weight):
+        """Parses a list of name:number pairs into a normalized dict of weights."""
+        names = []
+        weights = {}
+        total = 0
+        for arg in args:
+            name, _, w = arg.partition(':')
+            names.append(name)
+            if w:
+                weights[name] = ffloat(w)
+            else:
+                weights[name] = 1
+            total += abs(weights[name])
+        return names, {name: weight * master_weight / total for name, weight in weights.items()}
+
     def transfer(self, iterations, params, content_image, style_image, callback=None):
         """Performs style transfer from style_image to content_image."""
-        content_weight = ARGS.content_weight / max(len(ARGS.content_layers), 1)
-        style_weight = 1 / max(len(ARGS.style_layers), 1)
-        dd_weight = ARGS.dd_weight / max(len(ARGS.dd_layers), 1)
+        content_layers, content_weight = self.parse_weights(ARGS.content_layers,
+                                                            ARGS.content_weight)
+        style_layers, style_weight = self.parse_weights(ARGS.style_layers, 1)
+        dd_layers, dd_weight = self.parse_weights(ARGS.dd_layers, ARGS.dd_weight)
 
         layers = self.model.preprocess_images(
-            self.pool, content_image, style_image, ARGS.content_layers, ARGS.style_layers,
-            ARGS.tile_size)
+            self.pool, content_image, style_image, content_layers, style_layers, ARGS.tile_size)
         self.pool.set_features_and_grams(self.model.features, self.model.grams)
         self.model.img = params
 
@@ -740,7 +756,7 @@ class StyleTransfer:
         for step in range(1, iterations+1):
             # Forward jitter
             jitter_scale, _ = self.model.layer_info(
-                [l for l in layers if l in ARGS.content_layers][0])
+                [l for l in layers if l in content_layers][0])
             xy = np.array((0, 0))
             img_size = np.array(self.model.img.shape[-2:])
             if max(*img_size) > ARGS.tile_size:
@@ -755,8 +771,8 @@ class StyleTransfer:
 
                 # Compute style+content gradient
                 loss, grad = self.model.eval_sc_grad(
-                    self.pool, xy * jitter_scale, ARGS.content_layers, ARGS.style_layers,
-                    ARGS.dd_layers, content_weight, style_weight, dd_weight, ARGS.tile_size)
+                    self.pool, xy * jitter_scale, content_layers, style_layers, dd_layers,
+                    content_weight, style_weight, dd_weight, ARGS.tile_size)
 
                 # Compute total variation gradient
                 tv_loss, tv_grad = tv_norm(self.model.img / 255, beta=ARGS.tv_power)
