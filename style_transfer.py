@@ -10,6 +10,7 @@ from __future__ import division
 import argparse
 from collections import namedtuple, OrderedDict
 from fractions import Fraction
+from functools import partial
 import io
 import mmap
 import multiprocessing as mp
@@ -745,6 +746,38 @@ class StyleTransfer:
             total += abs(weights[name])
         return names, {name: weight * master_weight / total for name, weight in weights.items()}
 
+    def eval_loss_and_grad(self, img, sc_grad_args):
+        """Returns the summed loss and gradient."""
+        old_img = self.model.img
+        self.model.img = img
+
+        # Compute style+content gradient
+        loss, grad = self.model.eval_sc_grad(*sc_grad_args)
+
+        # Compute total variation gradient
+        tv_loss, tv_grad = tv_norm(self.model.img / 255, beta=ARGS.tv_power)
+        loss += ARGS.tv_weight * tv_loss
+
+        # Selectively blur edges more to obscure jitter and tile seams
+        tv_mask = np.ones_like(tv_grad)
+        tv_mask[:, :2, :] = 5
+        tv_mask[:, -2:, :] = 5
+        tv_mask[:, :, :2] = 5
+        tv_mask[:, :, -2:] = 5
+        tv_grad *= tv_mask
+
+        # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
+        p = ARGS.p_power
+        loss += ARGS.p_weight * np.sum(np.abs(self.model.img / 127.5)**p)
+        p_grad = p * np.sign(self.model.img) * np.abs(self.model.img / 127.5)**(p-1)
+
+        # Compute a weighted sum of gradients
+        loss += ARGS.shift_loss * self.model.img.size
+        grad = normalize(grad) + ARGS.tv_weight * tv_grad + ARGS.p_weight * p_grad
+
+        self.model.img = old_img
+        return loss, grad
+
     def transfer(self, iterations, params, content_image, style_images, callback=None):
         """Performs style transfer from style_image to content_image."""
         content_layers, content_weight = self.parse_weights(ARGS.content_layers,
@@ -773,42 +806,11 @@ class StyleTransfer:
             self.model.roll(xy, jitter_scale=jitter_scale)
             self.optimizer.roll(xy * jitter_scale)
 
-            def eval_loss_and_grad(img):
-                """Returns the summed loss and gradient."""
-                old_img = self.model.img
-                self.model.img = img
-
-                # Compute style+content gradient
-                loss, grad = self.model.eval_sc_grad(
-                    self.pool, xy * jitter_scale, content_layers, style_layers, dd_layers,
-                    content_weight, style_weight, dd_weight, ARGS.tile_size)
-
-                # Compute total variation gradient
-                tv_loss, tv_grad = tv_norm(self.model.img / 255, beta=ARGS.tv_power)
-                loss += ARGS.tv_weight * tv_loss
-
-                # Selectively blur edges more to obscure jitter and tile seams
-                tv_mask = np.ones_like(tv_grad)
-                tv_mask[:, :2, :] = 5
-                tv_mask[:, -2:, :] = 5
-                tv_mask[:, :, :2] = 5
-                tv_mask[:, :, -2:] = 5
-                tv_grad *= tv_mask
-
-                # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
-                p = ARGS.p_power
-                loss += ARGS.p_weight * np.sum(np.abs(self.model.img / 127.5)**p)
-                p_grad = p * np.sign(self.model.img) * np.abs(self.model.img / 127.5)**(p-1)
-
-                # Compute a weighted sum of gradients
-                loss += ARGS.shift_loss * self.model.img.size
-                grad = normalize(grad) + ARGS.tv_weight * tv_grad + ARGS.p_weight * p_grad
-
-                self.model.img = old_img
-                return loss, grad
-
             # In-place gradient descent update
-            avg_img, loss = self.optimizer.update(eval_loss_and_grad)
+            args = (self.pool, xy * jitter_scale, content_layers, style_layers, dd_layers,
+                    content_weight, style_weight, dd_weight, ARGS.tile_size)
+            avg_img, loss = self.optimizer.update(partial(self.eval_loss_and_grad,
+                                                          sc_grad_args=args))
 
             # Backward jitter
             self.model.roll(-xy, jitter_scale=jitter_scale)
