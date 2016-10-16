@@ -43,6 +43,11 @@ else:
 EPS = np.finfo(np.float32).eps
 
 
+def dot(a, b):
+    """Returns the dot product of two arrays with the same shape."""
+    return np.sum(a * b)
+
+
 def normalize(arr):
     """Normalizes an array to have an L1 norm equal to its length."""
     return arr / (np.mean(np.abs(arr)) + EPS)
@@ -264,7 +269,7 @@ class LBFGSOptimizer:
             ls_fevals += 1
 
             # Test that the weak Wolfe curvature condition holds
-            if np.sum(p * grad) < self.c2 * np.sum(p * self.grad):
+            if dot(p, grad) < self.c2 * dot(p, self.grad):
                 step_min = step_size
             # Test that the growth in the loss function is acceptable
             elif self.loss > 0 and loss > self.c1 * self.loss:
@@ -307,17 +312,17 @@ class LBFGSOptimizer:
         p = p.copy()
         alphas = []
         for s, y in zip(reversed(self.sk), reversed(self.yk)):
-            alphas.append(np.sum(s * p) / (np.sum(s * y)) + EPS)
+            alphas.append(dot(s, p) / (dot(s, y)) + EPS)
             p -= alphas[-1] * y
 
         if len(self.sk) > 0:
             s, y = self.sk[-1], self.yk[-1]
-            p *= np.sum(s * y) / (np.sum(y * y) + EPS)
+            p *= dot(s, y) / (dot(y, y) + EPS)
         else:
-            p /= np.sqrt(np.mean(p**2)) + EPS
+            p /= np.sqrt(dot(p, p) / p.size) + EPS
 
         for s, y, alpha in zip(self.sk, self.yk, reversed(alphas)):
-            beta = np.sum(y * p) / (np.sum(s * y) + EPS)
+            beta = dot(y, p) / (dot(s, y) + EPS)
             p += (alpha - beta) * s
 
         return p
