@@ -603,7 +603,7 @@ class CaffeModel:
             self.features[layer] /= passes
         return self.features
 
-    def preprocess_images(self, pool, content_image, style_image, content_layers, style_layers,
+    def preprocess_images(self, pool, content_image, style_images, content_layers, style_layers,
                           tile_size=512):
         """Performs preprocessing tasks on the input images."""
         # Construct list of layers to visit during the backward pass
@@ -615,10 +615,14 @@ class CaffeModel:
         # Prepare Gram matrices from style image
         print_('Preprocessing the style image...')
         self.grams = {}
-        self.set_image(style_image)
-        feats = self.prepare_features(pool, style_layers, tile_size)
-        for layer in feats:
-            self.grams[layer] = gram_matrix(feats[layer])
+        for layer in style_layers:
+            _, ch = self.layer_info(layer)
+            self.grams[layer] = np.zeros((ch, ch), np.float32)
+        for image in style_images:
+            self.set_image(image)
+            feats = self.prepare_features(pool, style_layers, tile_size)
+            for layer in feats:
+                self.grams[layer] += gram_matrix(feats[layer]) / len(style_images)
 
         # Prepare feature maps from content image
         print_('Preprocessing the content image...')
@@ -736,7 +740,7 @@ class StyleTransfer:
             total += abs(weights[name])
         return names, {name: weight * master_weight / total for name, weight in weights.items()}
 
-    def transfer(self, iterations, params, content_image, style_image, callback=None):
+    def transfer(self, iterations, params, content_image, style_images, callback=None):
         """Performs style transfer from style_image to content_image."""
         content_layers, content_weight = self.parse_weights(ARGS.content_layers,
                                                             ARGS.content_weight)
@@ -744,7 +748,7 @@ class StyleTransfer:
         dd_layers, dd_weight = self.parse_weights(ARGS.dd_layers, ARGS.dd_weight)
 
         layers = self.model.preprocess_images(
-            self.pool, content_image, style_image, content_layers, style_layers, ARGS.tile_size)
+            self.pool, content_image, style_images, content_layers, style_layers, ARGS.tile_size)
         self.pool.set_features_and_grams(self.model.features, self.model.grams)
         self.model.img = params
 
@@ -829,7 +833,7 @@ class StyleTransfer:
 
         return self.current_output, self.model.get_image()
 
-    def transfer_multiscale(self, sizes, iterations, content_image, style_image, initial_image,
+    def transfer_multiscale(self, sizes, iterations, content_image, style_images, initial_image,
                             initial_state=None, **kwargs):
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
@@ -839,7 +843,9 @@ class StyleTransfer:
 
         for i, size in enumerate(sizes):
             content_scaled = resize_to_fit(content_image, size, scale_up=True)
-            style_scaled = resize_to_fit(style_image, round(size * ARGS.style_scale))
+            style_scaled = []
+            for image in style_images:
+                style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale)))
             if output_image:  # this is not the first scale
                 initial_image = last_iterate.resize(content_scaled.size, Image.BICUBIC)
                 self.model.set_image(initial_image)
@@ -1108,7 +1114,9 @@ def main():
 
     sizes = sorted(ARGS.size)
     content_image = Image.open(ARGS.content_image).convert('RGB')
-    style_image = Image.open(ARGS.style_image).convert('RGB')
+    style_images = []
+    for image in ARGS.style_image.split(','):
+        style_images.append(Image.open(image).convert('RGB'))
     initial_image = None
     if ARGS.init:
         initial_image = Image.open(ARGS.init).convert('RGB')
@@ -1138,7 +1146,7 @@ def main():
     np.random.seed(ARGS.seed)
     try:
         transfer.transfer_multiscale(
-            sizes, ARGS.iterations, content_image, style_image, initial_image,
+            sizes, ARGS.iterations, content_image, style_images, initial_image,
             callback=server.progress, initial_state=state)
     except KeyboardInterrupt:
         print_()
