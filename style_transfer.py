@@ -1088,6 +1088,14 @@ def parse_args():
     ARGS = parser.parse_args()
 
 
+def print_args():
+    args = vars(ARGS)
+    print_('Parameters:')
+    for item in sorted(args.items()):
+        print_('% 14s: %s' % item)
+    print_()
+
+
 def init_model(resp_q, net_type):
     """Puts the list of layer shapes into resp_q. To be run in a separate process."""
     import caffe
@@ -1103,6 +1111,7 @@ def main():
     """CLI interface for style transfer."""
     start_time = timer()
     parse_args()
+    print_args()
 
     os.environ['GLOG_minloglevel'] = '2'
 
