@@ -24,7 +24,6 @@ import webbrowser
 import numpy as np
 from PIL import Image
 import posix_ipc
-from scipy.ndimage import convolve1d
 import six
 from six import print_
 from six.moves import cPickle as pickle
@@ -81,17 +80,14 @@ def gram_matrix(feat):
 
 def tv_norm(x, beta=2):
     """Computes the total variation norm and its gradient. From jcjohnson/cnn-vis and [3]."""
-    x_diff = convolve1d(x, [-1, 1], axis=2, mode='wrap')
-    y_diff = convolve1d(x, [-1, 1], axis=1, mode='wrap')
+    x_diff = x - np.roll(x, -1, axis=-1)
+    y_diff = x - np.roll(x, -1, axis=-2)
     grad_norm2 = x_diff**2 + y_diff**2 + EPS
     loss = np.sum(grad_norm2**(beta/2))
     dgrad_norm = (beta/2) * grad_norm2**(beta/2 - 1)
     dx_diff = 2 * x_diff * dgrad_norm
     dy_diff = 2 * y_diff * dgrad_norm
-    dxy_diff = dx_diff + dy_diff
-    dx_diff = roll2(dx_diff, (1, 0))
-    dy_diff = roll2(dy_diff, (0, 1))
-    grad = dxy_diff - dx_diff - dy_diff
+    grad = dx_diff + dy_diff - np.roll(dx_diff, 1, axis=-1) - np.roll(dy_diff, 1, axis=-2)
     return loss, grad
 
 
@@ -824,8 +820,8 @@ class StyleTransfer:
             old_img[:] = avg_img
 
             # Compute total variation statistic
-            x_diff = convolve1d(avg_img, [-1, 1], axis=2, mode='wrap')
-            y_diff = convolve1d(avg_img, [-1, 1], axis=1, mode='wrap')
+            x_diff = avg_img - np.roll(avg_img, -1, axis=-1)
+            y_diff = avg_img - np.roll(avg_img, -1, axis=-2)
             tv_loss = np.sum(x_diff**2 + y_diff**2) / avg_img.size
 
             # Record current output
