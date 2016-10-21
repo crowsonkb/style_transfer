@@ -256,6 +256,7 @@ class LBFGSOptimizer:
                 print_('Giving up on line search.')
                 s = -self.step_size * self.grad
                 loss, grad = opfunc(self.params + s)
+                y = grad - self.grad
                 break
 
             # Compute search direction, step, loss, and gradient
