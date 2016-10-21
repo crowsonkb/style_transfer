@@ -1086,6 +1086,7 @@ def parse_args():
 
 
 def print_args():
+    """Prints out all command-line parameters."""
     print_('Parameters:')
     for item in sorted(vars(ARGS).items()):
         print_('% 14s: %s' % item)
@@ -1093,6 +1094,7 @@ def print_args():
 
 
 def get_image_comment():
+    """Makes a comment string to write into the output image."""
     s = 'Created with https://github.com/crowsonkb/style_transfer.\n\n'
     s += 'Command line: style_transfer.py ' + ' '.join(sys.argv[1:]) + '\n\n'
     s += 'Parameters:\n'
