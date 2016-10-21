@@ -22,7 +22,7 @@ import time
 import webbrowser
 
 import numpy as np
-from PIL import Image
+from PIL import Image, PngImagePlugin
 import posix_ipc
 import six
 from six import print_
@@ -1085,11 +1085,19 @@ def parse_args():
 
 
 def print_args():
-    args = vars(ARGS)
     print_('Parameters:')
-    for item in sorted(args.items()):
+    for item in sorted(vars(ARGS).items()):
         print_('% 14s: %s' % item)
     print_()
+
+
+def get_image_comment():
+    s = 'Created with https://github.com/crowsonkb/style_transfer.\n\n'
+    s += 'Command line: style_transfer.py ' + ' '.join(sys.argv[1:]) + '\n\n'
+    s += 'Parameters:\n'
+    for item in sorted(vars(ARGS).items()):
+        s += '%s: %s\n' % item
+    return s
 
 
 def init_model(resp_q, net_type):
@@ -1165,7 +1173,9 @@ def main():
 
     if transfer.current_output:
         print_('Saving output as %s.' % ARGS.output_image)
-        transfer.current_output.save(ARGS.output_image)
+        png_info = PngImagePlugin.PngInfo()
+        png_info.add_itxt('Comment', get_image_comment())
+        transfer.current_output.save(ARGS.output_image, pnginfo=png_info)
         a, _, _ = ARGS.output_image.rpartition('.')
         print_('Saving state as %s.' % (a + '.state'))
         transfer.save_state(a + '.state')
