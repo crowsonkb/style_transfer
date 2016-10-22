@@ -157,6 +157,7 @@ class AdamOptimizer:
         self.avg_decay = avg_decay
         self.b1 = b1
         self.b2 = b2
+
         self.step = 0
         self.xy = np.zeros(2, dtype=np.int32)
         self.g1 = np.zeros_like(params)
