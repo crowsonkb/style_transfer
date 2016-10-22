@@ -54,7 +54,7 @@ def dot(x, y):
 
 def normalize(arr):
     """Normalizes an array to have an L1 norm equal to its length."""
-    return arr / (np.mean(np.abs(arr)) + EPS)
+    return arr / (np.mean(abs(arr)) + EPS)
 
 
 def resize(arr, size, order=3):
@@ -775,8 +775,8 @@ class StyleTransfer:
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
         p = ARGS.p_power
-        loss += ARGS.p_weight * np.sum(np.abs(self.model.img / 127.5)**p)
-        p_grad = p * np.sign(self.model.img) * np.abs(self.model.img / 127.5)**(p-1)
+        loss += ARGS.p_weight * np.sum(abs(self.model.img / 127.5)**p)
+        p_grad = p * np.sign(self.model.img) * abs(self.model.img / 127.5)**(p-1)
 
         # Compute a weighted sum of gradients
         loss += ARGS.shift_loss * self.model.img.size
@@ -824,10 +824,10 @@ class StyleTransfer:
             self.optimizer.roll(-xy * jitter_scale)
 
             # Compute image size statistic
-            img_size = np.mean(np.abs(avg_img))
+            img_size = np.mean(abs(avg_img))
 
             # Compute update size statistic
-            update_size = np.mean(np.abs(avg_img - old_img))
+            update_size = np.mean(abs(avg_img - old_img))
             old_img[:] = avg_img
 
             # Compute total variation statistic
