@@ -681,7 +681,7 @@ class CaffeModel:
                 current_gram = gram_matrix(self.data[layer])
                 n, mh, mw = self.data[layer].shape
                 feat = self.data[layer].reshape((n, mh * mw))
-                s_grad = np.dot(current_gram - self.grams[layer], feat)
+                s_grad = blas.ssymm(1, current_gram - self.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
                 loss += style_weight[layer] * np.sum((current_gram - self.grams[layer])**2) / 4
                 self.diff[layer] = axpy(style_weight[layer], normalize(s_grad), self.diff[layer])
