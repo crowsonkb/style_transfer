@@ -24,6 +24,7 @@ import webbrowser
 import numpy as np
 from PIL import Image, PngImagePlugin
 import posix_ipc
+from scipy.ndimage import zoom
 import six
 from six import print_
 from six.moves import cPickle as pickle
@@ -53,16 +54,13 @@ def normalize(arr):
     return arr / (np.mean(np.abs(arr)) + EPS)
 
 
-def resize(arr, size, method=Image.BICUBIC):
+def resize(arr, size, order=3):
     """Resamples a CxHxW Numpy float array to a different HxW shape."""
-    if arr.ndim != 3:
-        raise TypeError('Only 3D CxHxW arrays are supported')
     h, w = size
     arr = np.float32(arr)
-    planes = [arr[i, :, :] for i in range(arr.shape[0])]
-    imgs = [Image.fromarray(plane) for plane in planes]
-    imgs_resized = [img.resize((w, h), method) for img in imgs]
-    return np.stack([np.array(img) for img in imgs_resized])
+    resized_arr = zoom(arr, (1, h/arr.shape[1], w/arr.shape[2]), order=order, mode='wrap')
+    assert resized_arr.shape[1:] == size
+    return resized_arr
 
 
 def roll2(arr, xy):
@@ -201,7 +199,7 @@ class AdamOptimizer:
         self.params = last_iterate
         hw = self.params.shape[-2:]
         self.g1 = resize(self.g1, hw)
-        self.g2 = resize(self.g2, hw, Image.NEAREST)
+        self.g2 = resize(self.g2, hw, order=0)
         self.p1 = resize(self.p1, hw)
 
     def restore_state(self, optimizer):
@@ -524,6 +522,10 @@ class CaffeModel:
         if self.bgr:
             arr = arr[::-1]
         self.img = arr - self.mean
+
+    def resize_image(self, size):
+        """Resamples the current model input to a different size."""
+        self.img = resize(self.img, size[::-1])
 
     def layers(self):
         """Returns the layer names of the network."""
@@ -853,8 +855,8 @@ class StyleTransfer:
                 style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale),
                                                   scale_up=ARGS.style_scale_up))
             if output_image:  # this is not the first scale
-                initial_image = last_iterate.resize(content_scaled.size, Image.BICUBIC)
-                self.model.set_image(initial_image)
+                self.model.set_image(last_iterate)
+                self.model.resize_image(content_scaled.size)
                 params = self.model.img
                 self.optimizer.set_params(params)
             else:  # this is the first scale
