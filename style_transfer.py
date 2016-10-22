@@ -24,6 +24,7 @@ import webbrowser
 import numpy as np
 from PIL import Image, PngImagePlugin
 import posix_ipc
+from scipy.linalg import blas
 from scipy.ndimage import zoom
 import six
 from six import print_
@@ -44,9 +45,11 @@ else:
 EPS = np.finfo(np.float32).eps
 
 
-def dot(a, b):
+# pylint: disable=no-member
+def dot(x, y):
     """Returns the dot product of two arrays with the same shape."""
-    return np.sum(a * b)
+    assert x.dtype == y.dtype == np.float32
+    return blas.sdot(x.reshape(-1), y.reshape(-1))
 
 
 def normalize(arr):
@@ -185,6 +188,8 @@ class AdamOptimizer:
 
     def roll(self, xy):
         """Rolls the optimizer's internal state."""
+        if (xy == 0).all():
+            return
         self.xy += xy
         self.g1[:] = roll2(self.g1, xy)
         self.g2[:] = roll2(self.g2, xy)
@@ -326,6 +331,8 @@ class LBFGSOptimizer:
 
     def roll(self, xy):
         """Rolls the optimizer's internal state."""
+        if (xy == 0).all():
+            return
         self.xy += xy
         if self.grad is not None:
             self.grad[:] = roll2(self.grad, xy)
