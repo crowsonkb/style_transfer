@@ -1184,6 +1184,7 @@ def main():
     print_args()
 
     os.environ['GLOG_minloglevel'] = '2'
+    os.environ['KMP_AFFINITY'] = 'granularity=fine,compact,1,0'
 
     print_('Loading %s.' % ARGS.weights)
     resp_q = CTX.Queue()
