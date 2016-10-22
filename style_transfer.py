@@ -849,7 +849,8 @@ class StyleTransfer:
             content_scaled = resize_to_fit(content_image, size, scale_up=True)
             style_scaled = []
             for image in style_images:
-                style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale)))
+                style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale),
+                                                  scale_up=ARGS.style_scale_up))
             if output_image:  # this is not the first scale
                 initial_image = last_iterate.resize(content_scaled.size, Image.BICUBIC)
                 self.model.set_image(initial_image)
@@ -1017,6 +1018,9 @@ def parse_args():
         '--size', '-s', nargs='+', type=int, default=[256], help='the output size(s)')
     parser.add_argument(
         '--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor')
+    parser.add_argument(
+        '--style-scale-up', default=False, action='store_true',
+        help='allow scaling style image up')
     parser.add_argument(
         '--optimizer', '-o', default='adam', choices=['adam', 'lbfgs'],
         help='the optimizer algorithm')
