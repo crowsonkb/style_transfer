@@ -72,8 +72,34 @@ def resize(arr, size, order=3):
     return resized_arr
 
 
+def roll_by_1(arr, shift, axis):
+    """Rolls a 3D array in-place by a shift of one element. Axes 1 and 2 only."""
+    if axis == 1:
+        if shift == -1:
+            line = arr[:, 0, :].copy()
+            arr[:, :-1, :] = arr[:, 1:, :]
+            arr[:, -1, :] = line
+        elif shift == 1:
+            line = arr[:, -1, :].copy()
+            arr[:, 1:, :] = arr[:, :-1, :]
+            arr[:, 0, :] = line
+    elif axis == 2:
+        if shift == -1:
+            line = arr[:, :, 0].copy()
+            arr[:, :, :-1] = arr[:, :, 1:]
+            arr[:, :, -1] = line
+        elif shift == 1:
+            line = arr[:, :, -1].copy()
+            arr[:, :, 1:] = arr[:, :, :-1]
+            arr[:, :, 0] = line
+    else:
+        raise ValueError('Unsupported shift or axis')
+    return arr
+
+
 def roll2(arr, xy):
     """Translates an array by the shift xy, wrapping at the edges."""
+    # return np.roll(arr, xy, (2, 1))
     return np.roll(np.roll(arr, xy[0], -1), xy[1], -2)
 
 
@@ -87,14 +113,16 @@ def gram_matrix(feat):
 
 def tv_norm(x, beta=2):
     """Computes the total variation norm and its gradient. From jcjohnson/cnn-vis and [3]."""
-    x_diff = x - np.roll(x, -1, axis=-1)
-    y_diff = x - np.roll(x, -1, axis=-2)
+    x_diff = x - np.roll(x, -1, axis=2)
+    y_diff = x - np.roll(x, -1, axis=1)
     grad_norm2 = x_diff**2 + y_diff**2 + EPS
     loss = np.sum(grad_norm2**(beta/2))
     dgrad_norm = (beta/2) * grad_norm2**(beta/2 - 1)
     dx_diff = 2 * x_diff * dgrad_norm
     dy_diff = 2 * y_diff * dgrad_norm
-    grad = dx_diff + dy_diff - np.roll(dx_diff, 1, axis=-1) - np.roll(dy_diff, 1, axis=-2)
+    grad = dx_diff + dy_diff
+    grad -= roll_by_1(dx_diff, 1, axis=2)
+    grad -= roll_by_1(dy_diff, 1, axis=1)
     return loss, grad
 
 
