@@ -887,6 +887,8 @@ class StyleTransfer:
             iters_i = iterations[min(i, len(iterations)-1)]
             output_image, last_iterate = self.transfer(iters_i, params, content_scaled,
                                                        style_scaled, **kwargs)
+            if ARGS.init_with_avg:
+                last_iterate = output_image
 
         return output_image
 
@@ -1029,6 +1031,9 @@ def parse_args():
         help='the Adam step size (iteration magnitude)')
     parser.add_argument(
         '--avg-decay', type=ffloat, default=1, help='the polynomial-decay averaging exponent')
+    parser.add_argument(
+        '--init-with-avg', default=False, action='store_true',
+        help='initialize each scale with the last averaged iterate')
     parser.add_argument(
         '--no-averaging', default=False, action='store_true',
         help='disable averaging of successive iterates')
