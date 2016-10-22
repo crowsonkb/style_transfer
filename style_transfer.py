@@ -55,7 +55,7 @@ def normalize(arr):
 
 
 def resize(arr, size, order=3):
-    """Resamples a CxHxW Numpy float array to a different HxW shape."""
+    """Resamples a CxHxW NumPy float array to a different HxW shape."""
     h, w = size
     arr = np.float32(arr)
     resized_arr = zoom(arr, (1, h/arr.shape[1], w/arr.shape[2]), order=order, mode='wrap')
