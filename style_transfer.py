@@ -47,14 +47,20 @@ EPS = np.finfo(np.float32).eps
 
 # pylint: disable=no-member
 def dot(x, y):
-    """Returns the dot product of two arrays with the same shape."""
-    assert x.dtype == y.dtype == np.float32
-    return blas.sdot(x.reshape(-1), y.reshape(-1))
+    """Returns the dot product of two float32 arrays with the same shape."""
+    return blas.sdot(x.ravel(), y.ravel())
+
+
+# pylint: disable=no-member
+def axpy(a, x, y):
+    """Returns a*x + y for float a and float32 arrays x, y. Possibly overwrites y."""
+    return blas.saxpy(x.ravel(), y.ravel(), a=a).reshape(y.shape)
 
 
 def normalize(arr):
-    """Normalizes an array to have an L1 norm equal to its length."""
-    return arr / (np.mean(abs(arr)) + EPS)
+    """Normalizes an array in-place to have an L1 norm equal to its size."""
+    arr /= np.mean(abs(arr)) + EPS
+    return arr
 
 
 def resize(arr, size, order=3):
@@ -171,16 +177,20 @@ class AdamOptimizer:
         loss, grad = opfunc(self.params)
 
         # Adam
-        self.g1[:] = self.b1*self.g1 + (1-self.b1)*grad
-        self.g2[:] = self.b2*self.g2 + (1-self.b2)*grad**2
-        g1_bar = self.b1*self.g1 + (1-self.b1)*grad
-        g1_hat = g1_bar/(1-self.b1**(self.step+1))
-        g2_hat = self.g2/(1-self.b2**self.step)
-        self.params -= self.step_size * g1_hat / (np.sqrt(g2_hat) + EPS)
+        self.g1 *= self.b1
+        self.g1 = axpy(1 - self.b1, grad, self.g1)
+        self.g2 *= self.b2
+        self.g2 = axpy(1 - self.b2, grad**2, self.g2)
+        g1_bar = self.b1 * self.g1
+        g1_bar = axpy(1 - self.b1, grad, g1_bar)
+        step_size = self.step_size * np.sqrt(1-self.b2**self.step) / (1-self.b1**(self.step+1))
+        step = g1_bar / (np.sqrt(self.g2) + EPS)
+        self.params = axpy(-step_size, step, self.params)
 
         # Polynomial-decay averaging
         weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
-        self.p1[:] = (1-weight)*self.p1 + weight*self.params
+        self.p1 *= 1 - weight
+        self.p1 = axpy(weight, self.params, self.p1)
         if self.averaging:
             return self.p1, loss
         else:
@@ -296,7 +306,8 @@ class LBFGSOptimizer:
 
         # Polynomial-decay averaging
         weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
-        self.p1[:] = (1-weight)*self.p1 + weight*self.params
+        self.p1 *= 1 - weight
+        self.p1 = axpy(weight, self.params, self.p1)
         if self.averaging:
             return self.p1, loss
         else:
@@ -315,7 +326,7 @@ class LBFGSOptimizer:
         alphas = []
         for s, y in zip(reversed(self.sk), reversed(self.yk)):
             alphas.append(dot(s, p) / (dot(s, y)) + EPS)
-            p -= alphas[-1] * y
+            p = axpy(-alphas[-1], y, p)
 
         if len(self.sk) > 0:
             s, y = self.sk[-1], self.yk[-1]
@@ -325,7 +336,7 @@ class LBFGSOptimizer:
 
         for s, y, alpha in zip(self.sk, self.yk, reversed(alphas)):
             beta = dot(y, p) / (dot(s, y) + EPS)
-            p += (alpha - beta) * s
+            p = axpy(alpha - beta, s, p)
 
         return p
 
@@ -665,7 +676,7 @@ class CaffeModel:
                 feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
                 c_grad = self.data[layer] - feat
                 loss += content_weight[layer] * np.sum(c_grad**2) / 2
-                self.diff[layer] += content_weight[layer] * normalize(c_grad)
+                self.diff[layer] = axpy(content_weight[layer], normalize(c_grad), self.diff[layer])
             if layer in style_layers:
                 current_gram = gram_matrix(self.data[layer])
                 n, mh, mw = self.data[layer].shape
@@ -673,10 +684,12 @@ class CaffeModel:
                 s_grad = np.dot(current_gram - self.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
                 loss += style_weight[layer] * np.sum((current_gram - self.grams[layer])**2) / 4
-                self.diff[layer] += style_weight[layer] * normalize(s_grad)
+                self.diff[layer] = axpy(style_weight[layer], normalize(s_grad), self.diff[layer])
             if layer in dd_layers:
                 loss -= dd_weight[layer] * np.sum(self.data[layer]**2) / 2
-                self.diff[layer] -= dd_weight[layer] * normalize(self.data[layer])
+                self.diff[layer] = axpy(-dd_weight[layer],
+                                        normalize(self.data[layer]),
+                                        self.diff[layer])
 
             # Run the model backward
             if i+1 == len(layers):
@@ -775,12 +788,15 @@ class StyleTransfer:
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
         p = ARGS.p_power
-        loss += ARGS.p_weight * np.sum(abs(self.model.img / 127.5)**p)
-        p_grad = p * np.sign(self.model.img) * abs(self.model.img / 127.5)**(p-1)
+        img_scaled = self.model.img / 127.5
+        loss += ARGS.p_weight * np.sum(abs(img_scaled)**p)
+        p_grad = p * np.sign(self.model.img) * abs(img_scaled)**(p-1)
 
         # Compute a weighted sum of gradients
         loss += ARGS.shift_loss * self.model.img.size
-        grad = normalize(grad) + ARGS.tv_weight * tv_grad + ARGS.p_weight * p_grad
+        grad = normalize(grad)
+        grad = axpy(ARGS.tv_weight, tv_grad, grad)
+        grad = axpy(ARGS.p_weight, p_grad, grad)
 
         self.model.img = old_img
         return loss, grad
