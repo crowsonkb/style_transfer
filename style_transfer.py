@@ -694,7 +694,7 @@ class CaffeModel:
                 if i == 0:
                     self.features[layer] = feats[layer]
                 else:
-                    self.features[layer] += feats[layer]
+                    axpy(1, feats[layer], self.features[layer])
             self.roll(-xy)
         for layer in self.features:
             self.features[layer] /= passes
@@ -719,7 +719,7 @@ class CaffeModel:
             self.set_image(image)
             feats = self.prepare_features(pool, style_layers, tile_size)
             for layer in feats:
-                self.grams[layer] += gram_matrix(feats[layer]) / len(style_images)
+                axpy(1 / len(style_images), gram_matrix(feats[layer]), self.grams[layer])
 
         # Prepare feature maps from content image
         print_('Preprocessing the content image...')
