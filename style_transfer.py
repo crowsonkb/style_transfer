@@ -53,8 +53,11 @@ def dot(x, y):
 
 # pylint: disable=no-member
 def axpy(a, x, y):
-    """Returns a*x + y for float a and float32 arrays x, y. Possibly overwrites y."""
-    return blas.saxpy(x.ravel(), y.ravel(), a=a).reshape(y.shape)
+    """Sets y = a*x + y for float a and float32 arrays x, y and returns y."""
+    y_ = blas.saxpy(x.ravel(), y.ravel(), a=a).reshape(y.shape)
+    if y is not y_:
+        y[:] = y_
+    return y
 
 
 def normalize(arr):
@@ -208,19 +211,19 @@ class AdamOptimizer:
 
         # Adam
         self.g1 *= self.b1
-        self.g1 = axpy(1 - self.b1, grad, self.g1)
+        axpy(1 - self.b1, grad, self.g1)
         self.g2 *= self.b2
-        self.g2 = axpy(1 - self.b2, grad**2, self.g2)
+        axpy(1 - self.b2, grad**2, self.g2)
         g1_bar = self.b1 * self.g1
-        g1_bar = axpy(1 - self.b1, grad, g1_bar)
+        axpy(1 - self.b1, grad, g1_bar)
         step_size = self.step_size * np.sqrt(1-self.b2**self.step) / (1-self.b1**(self.step+1))
         step = g1_bar / (np.sqrt(self.g2) + EPS)
-        self.params = axpy(-step_size, step, self.params)
+        axpy(-step_size, step, self.params)
 
         # Polynomial-decay averaging
         weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
         self.p1 *= 1 - weight
-        self.p1 = axpy(weight, self.params, self.p1)
+        axpy(weight, self.params, self.p1)
         if self.averaging:
             return self.p1, loss
         else:
@@ -337,7 +340,7 @@ class LBFGSOptimizer:
         # Polynomial-decay averaging
         weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
         self.p1 *= 1 - weight
-        self.p1 = axpy(weight, self.params, self.p1)
+        axpy(weight, self.params, self.p1)
         if self.averaging:
             return self.p1, loss
         else:
@@ -356,7 +359,7 @@ class LBFGSOptimizer:
         alphas = []
         for s, y in zip(reversed(self.sk), reversed(self.yk)):
             alphas.append(dot(s, p) / (dot(s, y)) + EPS)
-            p = axpy(-alphas[-1], y, p)
+            axpy(-alphas[-1], y, p)
 
         if len(self.sk) > 0:
             s, y = self.sk[-1], self.yk[-1]
@@ -366,7 +369,7 @@ class LBFGSOptimizer:
 
         for s, y, alpha in zip(self.sk, self.yk, reversed(alphas)):
             beta = dot(y, p) / (dot(s, y) + EPS)
-            p = axpy(alpha - beta, s, p)
+            axpy(alpha - beta, s, p)
 
         return p
 
@@ -705,7 +708,7 @@ class CaffeModel:
                 feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
                 c_grad = self.data[layer] - feat
                 loss += content_weight[layer] * np.sum(c_grad**2) / 2
-                self.diff[layer] = axpy(content_weight[layer], normalize(c_grad), self.diff[layer])
+                axpy(content_weight[layer], normalize(c_grad), self.diff[layer])
             if layer in style_layers:
                 current_gram = gram_matrix(self.data[layer])
                 n, mh, mw = self.data[layer].shape
@@ -713,12 +716,10 @@ class CaffeModel:
                 s_grad = blas.ssymm(1, current_gram - self.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
                 loss += style_weight[layer] * np.sum((current_gram - self.grams[layer])**2) / 4
-                self.diff[layer] = axpy(style_weight[layer], normalize(s_grad), self.diff[layer])
+                axpy(style_weight[layer], normalize(s_grad), self.diff[layer])
             if layer in dd_layers:
                 loss -= dd_weight[layer] * np.sum(self.data[layer]**2) / 2
-                self.diff[layer] = axpy(-dd_weight[layer],
-                                        normalize(self.data[layer]),
-                                        self.diff[layer])
+                axpy(-dd_weight[layer], normalize(self.data[layer]), self.diff[layer])
 
             # Run the model backward
             if i+1 == len(layers):
@@ -826,9 +827,9 @@ class StyleTransfer:
 
         # Compute a weighted sum of gradients
         loss += ARGS.shift_loss * self.model.img.size
-        grad = normalize(grad)
-        grad = axpy(ARGS.tv_weight, tv_grad, grad)
-        grad = axpy(ARGS.p_weight, p_grad, grad)
+        normalize(grad)
+        axpy(ARGS.tv_weight, tv_grad, grad)
+        axpy(ARGS.p_weight, p_grad, grad)
 
         self.model.img = old_img
         return loss, grad
@@ -852,8 +853,7 @@ class StyleTransfer:
 
         for step in range(1, iterations+1):
             # Forward jitter
-            jitter_scale, _ = self.model.layer_info(
-                [l for l in layers if l in content_layers][0])
+            jitter_scale, _ = self.model.layer_info([l for l in layers if l in content_layers][0])
             xy = np.array((0, 0))
             img_size = np.array(self.model.img.shape[-2:])
             if max(*img_size) > ARGS.tile_size:
