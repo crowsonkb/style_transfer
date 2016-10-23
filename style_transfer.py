@@ -605,11 +605,11 @@ class CaffeModel:
         arr = np.float32(img).transpose((2, 0, 1))
         if self.bgr:
             arr = arr[::-1]
-        self.img = arr - self.mean
+        self.img = np.ascontiguousarray(arr - self.mean)
 
     def resize_image(self, size):
         """Resamples the current model input to a different size."""
-        self.img = resize(self.img, size[::-1])
+        self.img = np.ascontiguousarray(resize(self.img, size[::-1]))
 
     def layers(self):
         """Returns the layer names of the network."""
