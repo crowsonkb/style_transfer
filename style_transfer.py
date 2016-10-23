@@ -477,6 +477,7 @@ class TileWorker:
             self.process_one_request()
 
     def process_one_request(self):
+        """Receives one request from the master process and acts on it."""
         req = self.req_q.get()
         layers = []
 
