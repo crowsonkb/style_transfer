@@ -99,6 +99,8 @@ def roll_by_1(arr, shift, axis):
 
 def roll2(arr, xy):
     """Translates an array by the shift xy, wrapping at the edges."""
+    if (xy == 0).all():
+        return arr
     # return np.roll(arr, xy, (2, 1))
     return np.roll(np.roll(arr, xy[0], -1), xy[1], -2)
 
@@ -113,8 +115,8 @@ def gram_matrix(feat):
 
 def tv_norm(x, beta=2):
     """Computes the total variation norm and its gradient. From jcjohnson/cnn-vis and [3]."""
-    x_diff = x - np.roll(x, -1, axis=2)
-    y_diff = x - np.roll(x, -1, axis=1)
+    x_diff = x - roll_by_1(x.copy(), -1, axis=2)
+    y_diff = x - roll_by_1(x.copy(), -1, axis=1)
     grad_norm2 = x_diff**2 + y_diff**2 + EPS
     loss = np.sum(grad_norm2**(beta/2))
     dgrad_norm = (beta/2) * grad_norm2**(beta/2 - 1)
@@ -692,7 +694,7 @@ class CaffeModel:
         # Prepare gradient buffers and run the model forward
         for layer in layers:
             self.diff[layer] = 0
-        self.net.forward(end=self.last_layer)
+        self.net.forward(end=layers[0])
 
         for i, layer in enumerate(layers):
             # Compute the content and style gradients
@@ -762,6 +764,8 @@ class CaffeModel:
     def roll(self, xy, jitter_scale=32):
         """Rolls image and feature maps."""
         xy = xy * jitter_scale
+        if (xy == 0).all():
+            return
         for layer, feat in self.features.items():
             scale, _ = self.layer_info(layer)
             self.features[layer][:] = roll2(feat, xy // scale)
@@ -815,9 +819,10 @@ class StyleTransfer:
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
         p = ARGS.p_power
-        img_scaled = self.model.img / 127.5
-        loss += ARGS.p_weight * np.sum(abs(img_scaled)**p)
-        p_grad = p * np.sign(self.model.img) * abs(img_scaled)**(p-1)
+        img_scaled = abs(self.model.img / 127.5)
+        img_pow = img_scaled**(p-1)
+        loss += ARGS.p_weight * np.sum(img_pow * img_scaled)
+        p_grad = p * np.sign(self.model.img) * img_pow
 
         # Compute a weighted sum of gradients
         loss += ARGS.shift_loss * self.model.img.size
