@@ -7,7 +7,7 @@ Dependencies:
 - [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 2.7 or 3.5
 - Python packages [numpy](http://www.numpy.org), [Pillow](https://python-pillow.org), [posix-ipc](http://semanchuk.com/philip/posix_ipc/), [scipy](http://www.scipy.org), [six](https://pythonhosted.org/six/)
 
-`style_transfer` will run faster if NumPy and SciPy are compiled to use [MKL](https://software.intel.com/en-us/intel-mkl). If you are running Caffe on the CPU, it will also be faster if compiled with MKL. `style_transfer` uses one main worker process, plus one additional worker process per GPU, so the optimal value for `MKL_NUM_THREADS` is the number of real CPU cores divided by the number of GPUs plus one. The [Anaconda](https://www.continuum.io/downloads) Python distribution comes with MKL-accelerated NumPy and SciPy by default and is known to work with `style_transfer`.
+`style_transfer` will run faster if NumPy and SciPy are compiled to use [MKL](https://software.intel.com/en-us/intel-mkl). If you are running Caffe on the CPU, it will also be faster if compiled with MKL. The [Anaconda](https://www.continuum.io/downloads) Python distribution comes with MKL-accelerated NumPy and SciPy by default and is known to work with `style_transfer`.
 
 [Cloud computing images](https://github.com/crowsonkb/style_transfer/wiki/Cloud-computing-images) are available with `style_transfer` and its dependencies preinstalled.
 

@@ -44,6 +44,22 @@ else:
 # Machine epsilon for float32
 EPS = np.finfo(np.float32).eps
 
+# Maximum number of MKL threads between all processes
+MKL_THREADS = None
+
+
+def set_thread_count(threads):
+    """Sets the maximum number of MKL threads for this process."""
+    if MKL_THREADS is not None:
+        mkl.set_num_threads(max(1, threads))
+
+try:
+    import mkl
+    MKL_THREADS = mkl.get_max_threads()
+    set_thread_count(1)
+except ImportError:
+    pass
+
 
 # pylint: disable=no-member
 def dot(x, y):
@@ -415,6 +431,7 @@ SCGradRequest = namedtuple('SCGradRequest',
                            content_weight style_weight dd_weight''')
 SCGradResponse = namedtuple('SCGradResponse', 'resp loss grad')
 SetFeaturesAndGrams = namedtuple('SetFeaturesAndGrams', 'features grams')
+SetThreadCount = namedtuple('SetThreadCount', 'threads')
 
 
 class TileWorker:
@@ -483,6 +500,9 @@ class TileWorker:
                     {layer: req.grams[layer].array.copy() for layer in req.grams}
                 self.resp_q.put(())
 
+            if isinstance(req, SetThreadCount):
+                set_thread_count(req.threads)
+
 
 class TileWorkerPoolError(Exception):
     """Indicates abnormal termination of TileWorker processes."""
@@ -493,6 +513,7 @@ class TileWorkerPool:
     """A collection of TileWorkers."""
     def __init__(self, model, devices):
         self.workers = []
+        self.req_count = 0
         self.next_worker = 0
         self.resp_q = CTX.Queue()
         self.is_healthy = True
@@ -508,10 +529,17 @@ class TileWorkerPool:
     def request(self, req):
         """Enqueues a request."""
         self.workers[self.next_worker].req_q.put(req)
+        self.req_count += 1
         self.next_worker = (self.next_worker + 1) % len(self.workers)
 
     def reset_next_worker(self):
         """Sets the worker which will process the next request to worker 0."""
+        if MKL_THREADS is not None:
+            active_workers = max(1, self.req_count)
+            active_workers = min(len(self.workers), active_workers)
+            threads_per_process = MKL_THREADS // active_workers
+            self.set_thread_count(threads_per_process)
+        self.req_count = 0
         self.next_worker = 0
 
     def ensure_healthy(self):
@@ -533,6 +561,11 @@ class TileWorkerPool:
             self.resp_q.get()
         _ = [shm.unlink() for shm in features_shm.values()]
         _ = [shm.unlink() for shm in grams_shm.values()]
+
+    def set_thread_count(self, threads):
+        """Sets the MKL thread count per worker process."""
+        for worker in self.workers:
+            worker.req_q.put(SetThreadCount(threads))
 
 
 class CaffeModel:
@@ -1187,8 +1220,10 @@ def main():
     parse_args()
     print_args()
 
+    if MKL_THREADS is not None:
+        print_('MKL detected, %d threads maximum.\n' % MKL_THREADS)
+
     os.environ['GLOG_minloglevel'] = '2'
-    os.environ['KMP_AFFINITY'] = 'granularity=fine,compact,1,0'
 
     print_('Loading %s.' % ARGS.weights)
     resp_q = CTX.Queue()
