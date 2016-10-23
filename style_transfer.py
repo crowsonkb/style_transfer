@@ -469,39 +469,42 @@ class TileWorker:
         self.model.img = np.zeros((3, 1, 1), dtype=np.float32)
 
         while True:
-            req = self.req_q.get()
-            layers = []
+            self.process_one_request()
 
-            if isinstance(req, FeatureMapRequest):
-                for layer in reversed(self.model.layers()):
-                    if layer in req.layers:
-                        layers.append(layer)
-                features = self.model.eval_features_tile(req.img.array, layers)
-                req.img.unlink()
-                features_shm = {layer: SharedNDArray.copy(features[layer]) for layer in features}
-                self.resp_q.put(FeatureMapResponse(req.resp, features_shm))
+    def process_one_request(self):
+        req = self.req_q.get()
+        layers = []
 
-            if isinstance(req, SCGradRequest):
-                for layer in reversed(self.model.layers()):
-                    if layer in req.content_layers + req.style_layers + req.dd_layers:
-                        layers.append(layer)
-                self.model.roll(req.roll, jitter_scale=1)
-                loss, grad = self.model.eval_sc_grad_tile(
-                    req.img.array, req.start, layers, req.content_layers, req.style_layers,
-                    req.dd_layers, req.content_weight, req.style_weight, req.dd_weight)
-                req.img.unlink()
-                self.model.roll(-req.roll, jitter_scale=1)
-                self.resp_q.put(SCGradResponse(req.resp, loss, SharedNDArray.copy(grad)))
+        if isinstance(req, FeatureMapRequest):
+            for layer in reversed(self.model.layers()):
+                if layer in req.layers:
+                    layers.append(layer)
+            features = self.model.eval_features_tile(req.img.array, layers)
+            req.img.unlink()
+            features_shm = {layer: SharedNDArray.copy(features[layer]) for layer in features}
+            self.resp_q.put(FeatureMapResponse(req.resp, features_shm))
 
-            if isinstance(req, SetFeaturesAndGrams):
-                self.model.features = \
-                    {layer: req.features[layer].array.copy() for layer in req.features}
-                self.model.grams = \
-                    {layer: req.grams[layer].array.copy() for layer in req.grams}
-                self.resp_q.put(())
+        if isinstance(req, SCGradRequest):
+            for layer in reversed(self.model.layers()):
+                if layer in req.content_layers + req.style_layers + req.dd_layers:
+                    layers.append(layer)
+            self.model.roll(req.roll, jitter_scale=1)
+            loss, grad = self.model.eval_sc_grad_tile(
+                req.img.array, req.start, layers, req.content_layers, req.style_layers,
+                req.dd_layers, req.content_weight, req.style_weight, req.dd_weight)
+            req.img.unlink()
+            self.model.roll(-req.roll, jitter_scale=1)
+            self.resp_q.put(SCGradResponse(req.resp, loss, SharedNDArray.copy(grad)))
 
-            if isinstance(req, SetThreadCount):
-                set_thread_count(req.threads)
+        if isinstance(req, SetFeaturesAndGrams):
+            self.model.features = \
+                {layer: req.features[layer].array.copy() for layer in req.features}
+            self.model.grams = \
+                {layer: req.grams[layer].array.copy() for layer in req.grams}
+            self.resp_q.put(())
+
+        if isinstance(req, SetThreadCount):
+            set_thread_count(req.threads)
 
 
 class TileWorkerPoolError(Exception):
