@@ -76,6 +76,11 @@ def axpy(a, x, y):
     return y
 
 
+def norm2(arr):
+    """Returns 1/2 the L2 norm squared."""
+    return np.sum(arr**2) / 2
+
+
 def normalize(arr):
     """Normalizes an array in-place to have an L1 norm equal to its size."""
     arr /= np.mean(abs(arr)) + EPS
@@ -743,7 +748,7 @@ class CaffeModel:
                 end = start + np.array(self.data[layer].shape[-2:])
                 feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
                 c_grad = self.data[layer] - feat
-                loss += content_weight[layer] * np.sum(c_grad**2) / 2
+                loss += content_weight[layer] * norm2(c_grad)
                 axpy(content_weight[layer], normalize(c_grad), self.diff[layer])
             if layer in style_layers:
                 current_gram = gram_matrix(self.data[layer])
@@ -751,10 +756,10 @@ class CaffeModel:
                 feat = self.data[layer].reshape((n, mh * mw))
                 s_grad = blas.ssymm(1, current_gram - self.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
-                loss += style_weight[layer] * np.sum((current_gram - self.grams[layer])**2) / 4
+                loss += style_weight[layer] * norm2(current_gram - self.grams[layer]) / 2
                 axpy(style_weight[layer], normalize(s_grad), self.diff[layer])
             if layer in dd_layers:
-                loss -= dd_weight[layer] * np.sum(self.data[layer]**2) / 2
+                loss -= dd_weight[layer] * norm2(self.data[layer])
                 axpy(-dd_weight[layer], normalize(self.data[layer]), self.diff[layer])
 
             # Run the model backward
