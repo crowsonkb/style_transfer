@@ -78,7 +78,7 @@ def axpy(a, x, y):
 
 def norm2(arr):
     """Returns 1/2 the L2 norm squared."""
-    return np.sum(arr**2) / 2
+    return dot(arr, arr) / 2
 
 
 def normalize(arr):
