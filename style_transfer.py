@@ -432,8 +432,8 @@ class LBFGSOptimizer:
 class DMQNOptimizer:
     """Implements an experimental L-BFGS-based optimizer with damping, momentum, and iterate
     averaging. It employs a step size decay schedule rather than a line search."""
-    def __init__(self, params, step_size=1, averaging=True, avg_decay=3, n_corr=10, b1=0.9,
-                 lmbda=0.25):
+    def __init__(self, params, step_size=1, averaging=True, avg_decay=3, n_corr=10, b1=0.75,
+                 lmbda=0.2):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
@@ -471,7 +471,7 @@ class DMQNOptimizer:
         self.g1[:] = self.b1*self.g1 + grad
 
         # Store curvature pair and gradient
-        y = grad - self.grad + self.lmbda * s
+        y = (1 - self.lmbda) * (grad - self.grad) + self.lmbda * s
         self.store_curvature_pair(s, y)
         self.loss, self.grad = loss, grad
 
