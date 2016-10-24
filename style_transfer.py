@@ -87,7 +87,7 @@ def normalize(arr):
     return arr
 
 
-def resize(arr, size, order=3):
+def resize(arr, size, order=1):
     """Resamples a CxHxW NumPy float array to a different HxW shape."""
     h, w = size
     arr = np.float32(arr)
@@ -1100,7 +1100,7 @@ class StyleTransfer:
                     self.optimizer.restore_state(initial_state)
                     if self.model.img.shape != self.optimizer.params.shape:
                         initial_image = self.model.get_image(self.optimizer.params)
-                        initial_image = initial_image.resize(content_scaled.size, Image.BICUBIC)
+                        initial_image = initial_image.resize(content_scaled.size, Image.BILINEAR)
                         self.model.set_image(initial_image)
                         self.optimizer.set_params(self.model.img)
                     self.model.img = self.optimizer.params
