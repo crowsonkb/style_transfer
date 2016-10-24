@@ -433,7 +433,7 @@ class DMQNOptimizer:
     """Implements an experimental L-BFGS-based optimizer with damping, momentum, and iterate
     averaging. It employs a step size decay schedule rather than a line search."""
     def __init__(self, params, step_size=1, averaging=True, avg_decay=3, n_corr=10, b1=0.75,
-                 lmbda=0.2):
+                 lmbda=0.2, decay_p=2/3):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
@@ -443,6 +443,7 @@ class DMQNOptimizer:
         self.n_corr = n_corr
         self.b1 = b1
         self.lmbda = lmbda
+        self.decay_p = decay_p
 
         self.step = 0
         self.xy = np.zeros(2, dtype=np.int32)
@@ -462,7 +463,7 @@ class DMQNOptimizer:
             self.g1[:] = self.grad
 
         # Compute step, loss, and gradient
-        step_size = self.step_size / np.sqrt(self.step)
+        step_size = self.step_size / self.step**self.decay_p
         s = -step_size * self.inv_hv(self.b1*self.g1 + self.grad)
         s_mag = np.mean(np.abs(s))
         if s_mag > 50:
