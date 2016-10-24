@@ -464,6 +464,9 @@ class DMQNOptimizer:
         # Compute step, loss, and gradient
         step_size = self.step_size / np.sqrt(self.step)
         s = -step_size * self.inv_hv(self.b1*self.g1 + self.grad)
+        s_mag = np.mean(np.abs(s))
+        if s_mag > 50:
+            s /= s_mag
         loss, grad = opfunc(self.params + s)
 
         # Update params
@@ -529,7 +532,7 @@ class DMQNOptimizer:
         self.loss = None
         self.grad = None
         xy = self.params.shape[-2:]
-        self.g1 = resize(self.g1, xy)
+        self.g1 = np.zeros_like(last_iterate)
         self.p1 = resize(self.p1, xy)
         self.sk = []
         self.yk = []
