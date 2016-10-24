@@ -446,7 +446,6 @@ class DMQNOptimizer:
 
         self.step = 0
         self.xy = np.zeros(2, dtype=np.int32)
-        self.loss = None
         self.grad = None
         self.g1 = np.zeros_like(params)
         self.g2 = np.zeros_like(params)
@@ -459,7 +458,7 @@ class DMQNOptimizer:
         self.step += 1
 
         if self.step == 1:
-            self.loss, self.grad = opfunc(self.params)
+            _, self.grad = opfunc(self.params)
             self.g1 += self.grad
             self.g2 += self.grad**2
 
@@ -476,7 +475,7 @@ class DMQNOptimizer:
         axpy(self.phi, s, y)
         y *= np.sqrt(self.g2)
         self.store_curvature_pair(s, y)
-        self.loss, self.grad = loss, grad
+        self.grad = grad
 
         # Polynomial-decay averaging
         weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
@@ -532,7 +531,6 @@ class DMQNOptimizer:
         """Sets params to the supplied array, partially clearing the optimizer's internal state."""
         self.step = 0
         self.params = last_iterate
-        self.loss = None
         self.grad = None
         xy = self.params.shape[-2:]
         self.g1 = np.zeros_like(last_iterate)
@@ -545,7 +543,6 @@ class DMQNOptimizer:
         """Given a DMQNOptimizer instance, restores internal state from it."""
         assert isinstance(optimizer, DMQNOptimizer)
         self.params = optimizer.params
-        self.loss = optimizer.loss
         self.grad = optimizer.grad
         self.g1 = optimizer.g1
         self.g2 = optimizer.g2
