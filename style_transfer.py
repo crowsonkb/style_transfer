@@ -432,8 +432,8 @@ class LBFGSOptimizer:
 class DMQNOptimizer:
     """Implements an experimental L-BFGS-based optimizer with damping, momentum, and iterate
     averaging. It employs a step size decay schedule rather than a line search."""
-    def __init__(self, params, step_size=1, averaging=True, avg_decay=3, n_corr=10, b1=0.75,
-                 lmbda=0.2, decay_p=2/3):
+    def __init__(self, params, step_size=2, averaging=True, avg_decay=3, n_corr=10, b1=0.75,
+                 phi=0.2):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
@@ -442,14 +442,14 @@ class DMQNOptimizer:
         self.avg_decay = avg_decay
         self.n_corr = n_corr
         self.b1 = b1
-        self.lmbda = lmbda
-        self.decay_p = decay_p
+        self.phi = phi
 
         self.step = 0
         self.xy = np.zeros(2, dtype=np.int32)
         self.loss = None
         self.grad = None
         self.g1 = np.zeros_like(params)
+        self.g2 = np.zeros_like(params)
         self.p1 = params.copy()
         self.sk = []
         self.yk = []
@@ -461,21 +461,20 @@ class DMQNOptimizer:
         if self.step == 1:
             self.loss, self.grad = opfunc(self.params)
             self.g1[:] = self.grad
+            self.g2 += self.grad**2
 
         # Compute step, loss, and gradient
-        step_size = self.step_size / self.step**self.decay_p
-        s = -step_size * self.inv_hv(self.b1*self.g1 + self.grad)
-        s_mag = np.mean(np.abs(s))
-        if s_mag > 50:
-            s /= s_mag
+        s = -self.step_size * self.inv_hv(self.b1*self.g1 + self.grad)
         loss, grad = opfunc(self.params + s)
 
         # Update params
         self.params += s
         self.g1[:] = self.b1*self.g1 + grad
+        self.g2 += grad**2
 
         # Store curvature pair and gradient
-        y = (1 - self.lmbda) * (grad - self.grad) + self.lmbda * s
+        y = (1 - self.phi) * (grad - self.grad) + self.phi * s
+        y *= np.sqrt(self.g2)
         self.store_curvature_pair(s, y)
         self.loss, self.grad = loss, grad
 
@@ -506,6 +505,8 @@ class DMQNOptimizer:
         if len(self.sk) > 0:
             s, y = self.sk[-1], self.yk[-1]
             p *= dot(s, y) / (dot(y, y) + EPS)
+        else:
+            p /= np.sqrt(self.g2) + EPS
 
         for s, y, alpha in zip(self.sk, self.yk, reversed(alphas)):
             beta = dot(y, p) / (dot(s, y) + EPS)
@@ -521,6 +522,7 @@ class DMQNOptimizer:
         if self.grad is not None:
             self.grad[:] = roll2(self.grad, xy)
         self.g1[:] = roll2(self.g1, xy)
+        self.g2[:] = roll2(self.g2, xy)
         self.p1[:] = roll2(self.p1, xy)
         for i in range(len(self.sk)):
             self.sk[i][:] = roll2(self.sk[i], xy)
@@ -534,6 +536,7 @@ class DMQNOptimizer:
         self.grad = None
         xy = self.params.shape[-2:]
         self.g1 = np.zeros_like(last_iterate)
+        self.g2 = np.maximum(resize(self.g2, xy), 0) * (self.g2.size / last_iterate.size)
         self.p1 = resize(self.p1, xy)
         self.sk = []
         self.yk = []
@@ -545,6 +548,7 @@ class DMQNOptimizer:
         self.loss = optimizer.loss
         self.grad = optimizer.grad
         self.g1 = optimizer.g1
+        self.g2 = optimizer.g2
         self.p1 = optimizer.p1
         self.sk = optimizer.sk
         self.yk = optimizer.yk
