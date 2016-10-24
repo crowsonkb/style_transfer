@@ -460,20 +460,20 @@ class DMQNOptimizer:
 
         if self.step == 1:
             self.loss, self.grad = opfunc(self.params)
-            self.g1[:] = self.grad
+            self.g1 += self.grad
             self.g2 += self.grad**2
 
         # Compute step, loss, and gradient
-        s = -self.step_size * self.inv_hv(self.b1*self.g1 + self.grad)
-        loss, grad = opfunc(self.params + s)
-
-        # Update params
+        self.g1 *= self.b1
+        s = -self.step_size * self.inv_hv(self.g1 + self.grad)
         self.params += s
-        self.g1[:] = self.b1*self.g1 + grad
+        loss, grad = opfunc(self.params)
+        self.g1 += grad
         self.g2 += grad**2
 
         # Store curvature pair and gradient
-        y = (1 - self.phi) * (grad - self.grad) + self.phi * s
+        y = (1 - self.phi) * (grad - self.grad)
+        axpy(self.phi, s, y)
         y *= np.sqrt(self.g2)
         self.store_curvature_pair(s, y)
         self.loss, self.grad = loss, grad
