@@ -429,9 +429,9 @@ class LBFGSOptimizer:
         self.roll(-self.xy)
 
 
-class DMQNOptimizer:
-    """Implements an experimental L-BFGS-based optimizer with damping, momentum, and iterate
-    averaging. It employs a step size decay schedule rather than a line search."""
+class DMSQNOptimizer:
+    """Implements an experimental Quasi-Newton optimizer that incorporates Hessian damping,
+    momentum, per-feature learning rate scaling, and iterate averaging."""
     def __init__(self, params, step_size=2, averaging=True, avg_decay=3, n_corr=10, b1=0.75,
                  phi=0.2):
         """Initializes the optimizer."""
@@ -540,8 +540,8 @@ class DMQNOptimizer:
         self.yk = []
 
     def restore_state(self, optimizer):
-        """Given a DMQNOptimizer instance, restores internal state from it."""
-        assert isinstance(optimizer, DMQNOptimizer)
+        """Given a DMSQNOptimizer instance, restores internal state from it."""
+        assert isinstance(optimizer, DMSQNOptimizer)
         self.params = optimizer.params
         self.grad = optimizer.grad
         self.g1 = optimizer.g1
@@ -1097,8 +1097,8 @@ class StyleTransfer:
                 elif ARGS.optimizer == 'lbfgs':
                     self.optimizer = LBFGSOptimizer(
                         self.model.img, averaging=not ARGS.no_averaging, avg_decay=ARGS.avg_decay)
-                elif ARGS.optimizer == 'dmqn':
-                    self.optimizer = DMQNOptimizer(
+                elif ARGS.optimizer == 'dmsqn':
+                    self.optimizer = DMSQNOptimizer(
                         self.model.img, averaging=not ARGS.no_averaging, avg_decay=ARGS.avg_decay)
 
                 if initial_state:
@@ -1251,7 +1251,7 @@ def parse_args():
         '--style-scale-up', default=False, action='store_true',
         help='allow scaling style image up')
     parser.add_argument(
-        '--optimizer', '-o', default='adam', choices=['adam', 'lbfgs', 'dmqn'],
+        '--optimizer', '-o', default='adam', choices=['adam', 'lbfgs', 'dmsqn'],
         help='the optimizer algorithm')
     parser.add_argument(
         '--step-size', '-st', type=ffloat, default=15,
