@@ -428,6 +428,126 @@ class LBFGSOptimizer:
         self.xy = optimizer.xy.copy()
         self.roll(-self.xy)
 
+
+class DMQNOptimizer:
+    """Implements an experimental L-BFGS-based optimizer with damping, momentum, and iterate
+    averaging. It employs a step size decay schedule rather than a line search."""
+    def __init__(self, params, step_size=1, averaging=True, avg_decay=3, n_corr=10, b1=0.9,
+                 lmbda=0.25):
+        """Initializes the optimizer."""
+        self.params = params
+        self.step_size = step_size
+        self.averaging = averaging
+        assert avg_decay >= 0
+        self.avg_decay = avg_decay
+        self.n_corr = n_corr
+        self.b1 = b1
+        self.lmbda = lmbda
+
+        self.step = 0
+        self.xy = np.zeros(2, dtype=np.int32)
+        self.loss = None
+        self.grad = None
+        self.g1 = np.zeros_like(params)
+        self.p1 = params.copy()
+        self.sk = []
+        self.yk = []
+
+    def update(self, opfunc):
+        """Returns a step's parameter update given a loss/gradient evaluation function."""
+        self.step += 1
+
+        if self.step == 1:
+            self.loss, self.grad = opfunc(self.params)
+            self.g1[:] = self.grad
+
+        # Compute step, loss, and gradient
+        step_size = self.step_size / np.sqrt(self.step)
+        s = -step_size * self.inv_hv(self.b1*self.g1 + self.grad)
+        loss, grad = opfunc(self.params + s)
+
+        # Update params
+        self.params += s
+        self.g1[:] = self.b1*self.g1 + grad
+
+        # Store curvature pair and gradient
+        y = grad - self.grad + self.lmbda * s
+        self.store_curvature_pair(s, y)
+        self.loss, self.grad = loss, grad
+
+        # Polynomial-decay averaging
+        weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
+        self.p1 *= 1 - weight
+        axpy(weight, self.params, self.p1)
+        if self.averaging:
+            return self.p1, loss
+        else:
+            return self.params, loss
+
+    def store_curvature_pair(self, s, y):
+        """Updates the L-BFGS memory with a new curvature pair."""
+        self.sk.append(s)
+        self.yk.append(y)
+        if len(self.sk) > self.n_corr:
+            self.sk, self.yk = self.sk[1:], self.yk[1:]
+
+    def inv_hv(self, p):
+        """Computes the product of a vector with an approximation of the inverse Hessian."""
+        p = p.copy()
+        alphas = []
+        for s, y in zip(reversed(self.sk), reversed(self.yk)):
+            alphas.append(dot(s, p) / (dot(s, y)) + EPS)
+            axpy(-alphas[-1], y, p)
+
+        if len(self.sk) > 0:
+            s, y = self.sk[-1], self.yk[-1]
+            p *= dot(s, y) / (dot(y, y) + EPS)
+
+        for s, y, alpha in zip(self.sk, self.yk, reversed(alphas)):
+            beta = dot(y, p) / (dot(s, y) + EPS)
+            axpy(alpha - beta, s, p)
+
+        return p
+
+    def roll(self, xy):
+        """Rolls the optimizer's internal state."""
+        if (xy == 0).all():
+            return
+        self.xy += xy
+        if self.grad is not None:
+            self.grad[:] = roll2(self.grad, xy)
+        self.g1[:] = roll2(self.g1, xy)
+        self.p1[:] = roll2(self.p1, xy)
+        for i in range(len(self.sk)):
+            self.sk[i][:] = roll2(self.sk[i], xy)
+            self.yk[i][:] = roll2(self.yk[i], xy)
+
+    def set_params(self, last_iterate):
+        """Sets params to the supplied array, partially clearing the optimizer's internal state."""
+        self.step = 0
+        self.params = last_iterate
+        self.loss = None
+        self.grad = None
+        xy = self.params.shape[-2:]
+        self.g1 = resize(self.g1, xy)
+        self.p1 = resize(self.p1, xy)
+        self.sk = []
+        self.yk = []
+
+    def restore_state(self, optimizer):
+        """Given a DMQNOptimizer instance, restores internal state from it."""
+        assert isinstance(optimizer, DMQNOptimizer)
+        self.params = optimizer.params
+        self.loss = optimizer.loss
+        self.grad = optimizer.grad
+        self.g1 = optimizer.g1
+        self.p1 = optimizer.p1
+        self.sk = optimizer.sk
+        self.yk = optimizer.yk
+        self.step = optimizer.step
+        self.xy = optimizer.xy.copy()
+        self.roll(-self.xy)
+
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
 SCGradRequest = namedtuple('SCGradRequest',
@@ -972,6 +1092,9 @@ class StyleTransfer:
                 elif ARGS.optimizer == 'lbfgs':
                     self.optimizer = LBFGSOptimizer(
                         self.model.img, averaging=not ARGS.no_averaging, avg_decay=ARGS.avg_decay)
+                elif ARGS.optimizer == 'dmqn':
+                    self.optimizer = DMQNOptimizer(
+                        self.model.img, averaging=not ARGS.no_averaging, avg_decay=ARGS.avg_decay)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
@@ -1123,7 +1246,7 @@ def parse_args():
         '--style-scale-up', default=False, action='store_true',
         help='allow scaling style image up')
     parser.add_argument(
-        '--optimizer', '-o', default='adam', choices=['adam', 'lbfgs'],
+        '--optimizer', '-o', default='adam', choices=['adam', 'lbfgs', 'dmqn'],
         help='the optimizer algorithm')
     parser.add_argument(
         '--step-size', '-st', type=ffloat, default=15,
