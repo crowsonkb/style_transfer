@@ -734,12 +734,16 @@ class CaffeModel:
         arr = arr.transpose((1, 2, 0))
         return Image.fromarray(np.uint8(np.clip(arr, 0, 255)))
 
-    def set_image(self, img):
-        """Sets the current model input to a PIL image."""
+    def pil_to_image(self, img):
+        """Preprocesses a PIL image into params format."""
         arr = np.float32(img).transpose((2, 0, 1))
         if self.bgr:
             arr = arr[::-1]
-        self.img = np.ascontiguousarray(arr - self.mean)
+        return np.ascontiguousarray(arr - self.mean)
+
+    def set_image(self, img):
+        """Sets the current model input to a PIL image."""
+        self.img = self.pil_to_image(img)
 
     def resize_image(self, size):
         """Resamples the current model input to a different size."""
@@ -944,6 +948,7 @@ class StyleTransfer:
     """Performs style transfer."""
     def __init__(self, model):
         self.model = model
+        self.aux_image = None
         self.current_output = None
         self.optimizer = None
         self.pool = None
@@ -972,6 +977,8 @@ class StyleTransfer:
 
         # Compute style+content gradient
         loss, grad = self.model.eval_sc_grad(*sc_grad_args)
+        loss += ARGS.shift_loss * self.model.img.size
+        normalize(grad)
 
         # Compute total variation gradient
         tv_loss, tv_grad = tv_norm(self.model.img / 255, beta=ARGS.tv_power)
@@ -984,6 +991,7 @@ class StyleTransfer:
         tv_mask[:, :, :2] = 5
         tv_mask[:, :, -2:] = 5
         tv_grad *= tv_mask
+        axpy(ARGS.tv_weight, tv_grad, grad)
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
         p = ARGS.p_power
@@ -991,12 +999,13 @@ class StyleTransfer:
         img_pow = img_scaled**(p-1)
         loss += ARGS.p_weight * np.sum(img_pow * img_scaled)
         p_grad = p * np.sign(self.model.img) * img_pow
-
-        # Compute a weighted sum of gradients
-        loss += ARGS.shift_loss * self.model.img.size
-        normalize(grad)
-        axpy(ARGS.tv_weight, tv_grad, grad)
         axpy(ARGS.p_weight, p_grad, grad)
+
+        # Compute auxiliary image gradient
+        if self.aux_image is not None:
+            aux_grad = (self.model.img - self.aux_image) / 255
+            loss += ARGS.aux_weight * norm2(aux_grad)
+            axpy(ARGS.aux_weight, aux_grad, grad)
 
         self.model.img = old_img
         return loss, grad
@@ -1063,7 +1072,7 @@ class StyleTransfer:
         return self.current_output, self.model.get_image()
 
     def transfer_multiscale(self, sizes, iterations, content_image, style_images, initial_image,
-                            initial_state=None, **kwargs):
+                            aux_image, initial_state=None, **kwargs):
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
         last_iterate = None
@@ -1076,6 +1085,9 @@ class StyleTransfer:
             for image in style_images:
                 style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale),
                                                   scale_up=ARGS.style_scale_up))
+            if aux_image:
+                aux_scaled = aux_image.resize(content_scaled.size, Image.BICUBIC)
+                self.aux_image = self.model.pil_to_image(aux_scaled)
             if output_image:  # this is not the first scale
                 self.model.set_image(last_iterate)
                 self.model.resize_image(content_scaled.size)
@@ -1106,7 +1118,7 @@ class StyleTransfer:
                     self.optimizer.restore_state(initial_state)
                     if self.model.img.shape != self.optimizer.params.shape:
                         initial_image = self.model.get_image(self.optimizer.params)
-                        initial_image = initial_image.resize(content_scaled.size, Image.BILINEAR)
+                        initial_image = initial_image.resize(content_scaled.size, Image.BICUBIC)
                         self.model.set_image(initial_image)
                         self.optimizer.set_params(self.model.img)
                     self.model.img = self.optimizer.params
@@ -1240,7 +1252,8 @@ def parse_args():
     parser.add_argument('content_image', help='the content image')
     parser.add_argument('style_image', help='the style image')
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
-    parser.add_argument('--init', metavar='IMAGE', help='the initial image')
+    parser.add_argument('--init-image', metavar='IMAGE', help='the initial image')
+    parser.add_argument('--aux-image', metavar='IMAGE', help='the auxiliary image')
     parser.add_argument('--state', help='a .state file (the initial state)')
     parser.add_argument(
         '--iterations', '-i', nargs='+', type=int, default=[300], help='the number of iterations')
@@ -1280,6 +1293,8 @@ def parse_args():
         '--p-weight', '-pw', type=ffloat, default=0.05, help='the p-norm regularizer factor')
     parser.add_argument(
         '--p-power', '-pp', metavar='P', type=ffloat, default=6, help='the p-norm exponent')
+    parser.add_argument(
+        '--aux-weight', '-aw', type=ffloat, default=1, help='the auxiliary image factor')
     parser.add_argument(
         '--content-layers', nargs='*', default=['conv4_2'],
         metavar='LAYER', help='the layers to use for content')
@@ -1380,9 +1395,11 @@ def main():
     style_images = []
     for image in ARGS.style_image.split(','):
         style_images.append(Image.open(image).convert('RGB'))
-    initial_image = None
-    if ARGS.init:
-        initial_image = Image.open(ARGS.init).convert('RGB')
+    initial_image, aux_image = None, None
+    if ARGS.init_image:
+        initial_image = Image.open(ARGS.init_image).convert('RGB')
+    if ARGS.aux_image:
+        aux_image = Image.open(ARGS.aux_image).convert('RGB')
 
     server_address = ('', ARGS.port)
     url = 'http://127.0.0.1:%d/' % ARGS.port
@@ -1409,7 +1426,7 @@ def main():
     np.random.seed(ARGS.seed)
     try:
         transfer.transfer_multiscale(
-            sizes, ARGS.iterations, content_image, style_images, initial_image,
+            sizes, ARGS.iterations, content_image, style_images, initial_image, aux_image,
             callback=server.progress, initial_state=state)
     except KeyboardInterrupt:
         print_()
