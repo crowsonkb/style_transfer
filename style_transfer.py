@@ -448,7 +448,7 @@ class DMSQNOptimizer:
         self.xy = np.zeros(2, dtype=np.int32)
         self.grad = None
         self.g1 = np.zeros_like(params)
-        self.g2 = np.zeros_like(params)
+        self.g2 = np.zeros_like(params) + EPS
         self.p1 = params.copy()
         self.sk = []
         self.yk = []
@@ -498,17 +498,17 @@ class DMSQNOptimizer:
         p = p.copy()
         alphas = []
         for s, y in zip(reversed(self.sk), reversed(self.yk)):
-            alphas.append(dot(s, p) / (dot(s, y)) + EPS)
+            alphas.append(dot(s, p) / dot(s, y))
             axpy(-alphas[-1], y, p)
 
         if len(self.sk) > 0:
             s, y = self.sk[-1], self.yk[-1]
-            p *= dot(s, y) / (dot(y, y) + EPS)
+            p *= dot(s, y) / dot(y, y)
         else:
-            p /= np.sqrt(self.g2) + EPS
+            p /= np.sqrt(self.g2)
 
         for s, y, alpha in zip(self.sk, self.yk, reversed(alphas)):
-            beta = dot(y, p) / (dot(s, y) + EPS)
+            beta = dot(y, p) / dot(s, y)
             axpy(alpha - beta, s, p)
 
         return p
@@ -534,7 +534,7 @@ class DMSQNOptimizer:
         self.grad = None
         xy = self.params.shape[-2:]
         self.g1 = np.zeros_like(last_iterate)
-        self.g2 = np.maximum(resize(self.g2, xy), 0) * (self.g2.size / last_iterate.size)
+        self.g2 = np.maximum(resize(self.g2, xy), EPS) * (self.g2.size / last_iterate.size)
         self.p1 = resize(self.p1, xy)
         self.sk = []
         self.yk = []
