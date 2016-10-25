@@ -1086,7 +1086,7 @@ class StyleTransfer:
                 style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale),
                                                   scale_up=ARGS.style_scale_up))
             if aux_image:
-                aux_scaled = aux_image.resize(content_scaled.size, Image.BICUBIC)
+                aux_scaled = aux_image.resize(content_scaled.size, Image.LANCZOS)
                 self.aux_image = self.model.pil_to_image(aux_scaled)
             if output_image:  # this is not the first scale
                 self.model.set_image(last_iterate)
@@ -1095,7 +1095,7 @@ class StyleTransfer:
                 self.optimizer.set_params(params)
             else:  # this is the first scale
                 if initial_image:  # and the user supplied an initial image
-                    initial_image = initial_image.resize(content_scaled.size, Image.BICUBIC)
+                    initial_image = initial_image.resize(content_scaled.size, Image.LANCZOS)
                     self.model.set_image(initial_image)
                 else:  # and the user did not supply an initial image
                     w, h = content_scaled.size
@@ -1118,7 +1118,7 @@ class StyleTransfer:
                     self.optimizer.restore_state(initial_state)
                     if self.model.img.shape != self.optimizer.params.shape:
                         initial_image = self.model.get_image(self.optimizer.params)
-                        initial_image = initial_image.resize(content_scaled.size, Image.BICUBIC)
+                        initial_image = initial_image.resize(content_scaled.size, Image.LANCZOS)
                         self.model.set_image(initial_image)
                         self.optimizer.set_params(self.model.img)
                     self.model.img = self.optimizer.params
