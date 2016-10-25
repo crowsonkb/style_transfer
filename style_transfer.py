@@ -1127,7 +1127,7 @@ class StyleTransfer:
             iters_i = iterations[min(i, len(iterations)-1)]
             output_image, last_iterate = self.transfer(iters_i, params, content_scaled,
                                                        style_scaled, **kwargs)
-            if ARGS.init_with_avg:
+            if ARGS.init_with_avg or ARGS.optimizer == 'dmsqn':
                 last_iterate = output_image
 
         return output_image
