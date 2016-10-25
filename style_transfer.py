@@ -459,6 +459,7 @@ class DMSQNOptimizer:
 
         if self.step == 1:
             _, self.grad = opfunc(self.params)
+            self.g1 *= self.b1
             self.g1 += self.grad
             self.g2 += self.grad**2
 
@@ -533,9 +534,9 @@ class DMSQNOptimizer:
         self.params = last_iterate
         self.grad = None
         xy = self.params.shape[-2:]
-        self.g1 = np.zeros_like(last_iterate)
+        self.g1 = resize(self.g1, xy)
         self.g2 = np.maximum(resize(self.g2, xy), EPS) * (self.g2.size / last_iterate.size)
-        self.p1 = resize(self.p1, xy)
+        self.p1 = np.zeros_like(last_iterate)
         self.sk = []
         self.yk = []
 
