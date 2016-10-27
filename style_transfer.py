@@ -952,7 +952,7 @@ class StyleTransfer:
     """Performs style transfer."""
     def __init__(self, model):
         self.model = model
-        self.layer_weights = {layer: 1.0 for layer in self.model.layers()}
+        self.layer_weights = {layer: 1.0 for layer in self.model.layers() + ['data']}
         if ARGS.layer_weights:
             with open(ARGS.layer_weights) as lw_file:
                 self.layer_weights.update(json.load(lw_file))
