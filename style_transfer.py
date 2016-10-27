@@ -12,6 +12,7 @@ from collections import namedtuple, OrderedDict
 from fractions import Fraction
 from functools import partial
 import io
+import json
 import mmap
 import multiprocessing as mp
 import os
@@ -558,7 +559,7 @@ FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
 SCGradRequest = namedtuple('SCGradRequest',
                            '''resp img roll start content_layers style_layers dd_layers
-                           content_weight style_weight dd_weight''')
+                           layer_weights content_weight style_weight dd_weight''')
 SCGradResponse = namedtuple('SCGradResponse', 'resp loss grad')
 SetFeaturesAndGrams = namedtuple('SetFeaturesAndGrams', 'features grams')
 SetThreadCount = namedtuple('SetThreadCount', 'threads')
@@ -622,7 +623,8 @@ class TileWorker:
             self.model.roll(req.roll, jitter_scale=1)
             loss, grad = self.model.eval_sc_grad_tile(
                 req.img.array, req.start, layers, req.content_layers, req.style_layers,
-                req.dd_layers, req.content_weight, req.style_weight, req.dd_weight)
+                req.dd_layers, req.layer_weights, req.content_weight, req.style_weight,
+                req.dd_weight)
             req.img.unlink()
             self.model.roll(-req.roll, jitter_scale=1)
             self.resp_q.put(SCGradResponse(req.resp, loss, SharedNDArray.copy(grad)))
@@ -859,7 +861,7 @@ class CaffeModel:
         return layers
 
     def eval_sc_grad_tile(self, img, start, layers, content_layers, style_layers, dd_layers,
-                          content_weight, style_weight, dd_weight):
+                          layer_weights, content_weight, style_weight, dd_weight):
         """Evaluates an individual style+content gradient tile."""
         self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
         self.data['data'] = img
@@ -871,6 +873,8 @@ class CaffeModel:
         self.net.forward(end=layers[0])
 
         for i, layer in enumerate(layers):
+            lw = layer_weights[layer]
+
             # Compute the content and style gradients
             if layer in content_layers:
                 scale, _ = self.layer_info(layer)
@@ -878,19 +882,19 @@ class CaffeModel:
                 end = start + np.array(self.data[layer].shape[-2:])
                 feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
                 c_grad = self.data[layer] - feat
-                loss += content_weight[layer] * norm2(c_grad)
-                axpy(content_weight[layer], normalize(c_grad), self.diff[layer])
+                loss += lw * content_weight[layer] * norm2(c_grad)
+                axpy(lw * content_weight[layer], normalize(c_grad), self.diff[layer])
             if layer in style_layers:
                 current_gram = gram_matrix(self.data[layer])
                 n, mh, mw = self.data[layer].shape
                 feat = self.data[layer].reshape((n, mh * mw))
                 s_grad = blas.ssymm(1, current_gram - self.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
-                loss += style_weight[layer] * norm2(current_gram - self.grams[layer]) / 2
-                axpy(style_weight[layer], normalize(s_grad), self.diff[layer])
+                loss += lw * style_weight[layer] * norm2(current_gram - self.grams[layer]) / 2
+                axpy(lw * style_weight[layer], normalize(s_grad), self.diff[layer])
             if layer in dd_layers:
-                loss -= dd_weight[layer] * norm2(self.data[layer])
-                axpy(-dd_weight[layer], normalize(self.data[layer]), self.diff[layer])
+                loss -= lw * dd_weight[layer] * norm2(self.data[layer])
+                axpy(-lw * dd_weight[layer], normalize(self.data[layer]), self.diff[layer])
 
             # Run the model backward
             if i+1 == len(layers):
@@ -900,8 +904,8 @@ class CaffeModel:
 
         return loss, self.diff['data']
 
-    def eval_sc_grad(self, pool, roll, content_layers, style_layers, dd_layers, content_weight,
-                     style_weight, dd_weight, tile_size):
+    def eval_sc_grad(self, pool, roll, content_layers, style_layers, dd_layers, layer_weights,
+                     content_weight, style_weight, dd_weight, tile_size):
         """Evaluates the summed style and content gradients."""
         loss = 0
         grad = np.zeros_like(self.img)
@@ -922,7 +926,7 @@ class CaffeModel:
                 pool.ensure_healthy()
                 pool.request(
                     SCGradRequest((start, end), SharedNDArray.copy(tile), roll, start,
-                                  content_layers, style_layers, dd_layers,
+                                  content_layers, style_layers, dd_layers, layer_weights,
                                   content_weight, style_weight, dd_weight))
         pool.reset_next_worker()
         for _ in range(np.prod(ntiles)):
@@ -948,6 +952,10 @@ class StyleTransfer:
     """Performs style transfer."""
     def __init__(self, model):
         self.model = model
+        self.layer_weights = {layer: 1.0 for layer in self.model.layers()}
+        if ARGS.layer_weights:
+            with open(ARGS.layer_weights) as lw_file:
+                self.layer_weights.update(json.load(lw_file))
         self.aux_image = None
         self.current_output = None
         self.optimizer = None
@@ -974,6 +982,7 @@ class StyleTransfer:
         """Returns the summed loss and gradient."""
         old_img = self.model.img
         self.model.img = img
+        lw = self.layer_weights['data']
 
         # Compute style+content gradient
         loss, grad = self.model.eval_sc_grad(*sc_grad_args)
@@ -982,7 +991,7 @@ class StyleTransfer:
 
         # Compute total variation gradient
         tv_loss, tv_grad = tv_norm(self.model.img / 255, beta=ARGS.tv_power)
-        loss += ARGS.tv_weight * tv_loss
+        loss += lw * ARGS.tv_weight * tv_loss
 
         # Selectively blur edges more to obscure jitter and tile seams
         tv_mask = np.ones_like(tv_grad)
@@ -991,21 +1000,21 @@ class StyleTransfer:
         tv_mask[:, :, :2] = 5
         tv_mask[:, :, -2:] = 5
         tv_grad *= tv_mask
-        axpy(ARGS.tv_weight, tv_grad, grad)
+        axpy(lw * ARGS.tv_weight, tv_grad, grad)
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
         p = ARGS.p_power
         img_scaled = abs(self.model.img / 127.5)
         img_pow = img_scaled**(p-1)
-        loss += ARGS.p_weight * np.sum(img_pow * img_scaled)
+        loss += lw * ARGS.p_weight * np.sum(img_pow * img_scaled)
         p_grad = p * np.sign(self.model.img) * img_pow
-        axpy(ARGS.p_weight, p_grad, grad)
+        axpy(lw * ARGS.p_weight, p_grad, grad)
 
         # Compute auxiliary image gradient
         if self.aux_image is not None:
             aux_grad = (self.model.img - self.aux_image) / 255
-            loss += ARGS.aux_weight * norm2(aux_grad)
-            axpy(ARGS.aux_weight, aux_grad, grad)
+            loss += lw * ARGS.aux_weight * norm2(aux_grad)
+            axpy(lw * ARGS.aux_weight, aux_grad, grad)
 
         self.model.img = old_img
         return loss, grad
@@ -1039,7 +1048,7 @@ class StyleTransfer:
 
             # In-place gradient descent update
             args = (self.pool, xy * jitter_scale, content_layers, style_layers, dd_layers,
-                    content_weight, style_weight, dd_weight, ARGS.tile_size)
+                    self.layer_weights, content_weight, style_weight, dd_weight, ARGS.tile_size)
             avg_img, loss = self.optimizer.update(partial(self.eval_loss_and_grad,
                                                           sc_grad_args=args))
 
@@ -1281,6 +1290,8 @@ def parse_args():
     parser.add_argument(
         '--shift-loss', type=ffloat, default=0,
         help='add this value to the calculated loss. used for shifting negative loss above zero')
+    parser.add_argument(
+        '--layer-weights', help='a json file containing per-layer weight scaling factors')
     parser.add_argument(
         '--content-weight', '-cw', type=ffloat, default=0.05, help='the content image factor')
     parser.add_argument(
