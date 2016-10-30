@@ -23,7 +23,7 @@ RUN curl -O http://registrationcenter-download.intel.com/akdlm/irc_nas/tec/9662/
     rm l_mkl_2017.0.098.tgz && \
     l_mkl_2017.0.098/install.sh --silent silent.cfg && \
     rm -rf l_mkl_2017.0.098
-RUN echo '. /opt/intel/mkl/bin/mklvars.sh intel64' >> /root/bashrc
+RUN echo '. /opt/intel/mkl/bin/mklvars.sh intel64' >> /root/.bashrc
 
 # Python environment
 WORKDIR /tmp
