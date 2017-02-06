@@ -684,6 +684,7 @@ class StyleTransfer:
                 self.layer_weights.update(json.load(lw_file))
         self.aux_image = None
         self.current_output = None
+        self.current_raw = None
         self.optimizer = None
         self.pool = None
         self.step = 0
@@ -794,6 +795,7 @@ class StyleTransfer:
             tv_loss = np.sum(x_diff**2 + y_diff**2) / avg_img.size
 
             # Record current output
+            self.current_raw = avg_img
             self.current_output = self.model.get_image(avg_img)
 
             print_(step, loss / avg_img.size, img_size, update_size, tv_loss, sep=',', file=log,
@@ -803,13 +805,13 @@ class StyleTransfer:
                 callback(step=step, update_size=update_size, loss=loss / avg_img.size,
                          tv_loss=tv_loss)
 
-        return self.current_output, self.model.get_image()
+        return self.current_output
 
     def transfer_multiscale(self, sizes, iterations, content_image, style_images, initial_image,
                             aux_image, initial_state=None, **kwargs):
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
-        last_iterate = None
+        output_raw = None
         print_('Starting %d worker process(es).' % len(ARGS.devices))
         self.pool = TileWorkerPool(self.model, ARGS.devices)
 
@@ -823,7 +825,7 @@ class StyleTransfer:
                 aux_scaled = aux_image.resize(content_scaled.size, Image.LANCZOS)
                 self.aux_image = self.model.pil_to_image(aux_scaled)
             if output_image:  # this is not the first scale
-                self.model.set_image(last_iterate)
+                self.model.img = output_raw
                 self.model.resize_image(content_scaled.size)
                 params = self.model.img
                 self.optimizer.set_params(params)
@@ -851,8 +853,8 @@ class StyleTransfer:
 
             params = self.model.img
             iters_i = iterations[min(i, len(iterations)-1)]
-            output_image, _ = self.transfer(iters_i, params, content_scaled, style_scaled, **kwargs)
-            last_iterate = output_image
+            output_image = self.transfer(iters_i, params, content_scaled, style_scaled, **kwargs)
+            output_raw = self.current_raw
 
         return output_image
 
