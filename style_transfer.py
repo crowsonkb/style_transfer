@@ -837,8 +837,8 @@ class StyleTransfer:
 
                 # make sure the optimizer's params array shares memory with self.model.img
                 # after preprocess_image is called later
-                    self.optimizer = AdamOptimizer(
-                        self.model.img, step_size=ARGS.step_size, bp1=1-(1/ARGS.avg_window))
+                self.optimizer = AdamOptimizer(
+                    self.model.img, step_size=ARGS.step_size, bp1=1-(1/ARGS.avg_window))
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
