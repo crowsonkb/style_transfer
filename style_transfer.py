@@ -15,6 +15,7 @@ from fractions import Fraction
 from functools import partial
 import io
 import json
+import math
 import mmap
 import multiprocessing as mp
 import os
@@ -160,6 +161,45 @@ def tv_norm(x, beta=2):
     grad = dx_diff + dy_diff
     grad -= roll_by_1(dx_diff, 1, axis=2)
     grad -= roll_by_1(dy_diff, 1, axis=1)
+    return loss, grad
+
+
+def pyramid(x, max_levels=None):
+    pyramid = []
+    hw = np.array(x.shape[1:])
+    levels = int(np.min(np.floor(np.log2(hw))))
+    if max_levels is not None:
+        levels = min(levels, max_levels)
+
+    cur_image = x
+    for i in range(levels):
+        new_hw = hw // 2**(i+1)
+        next_image = resize(cur_image, new_hw)
+        pyramid.append(cur_image - resize(next_image, cur_image.shape[1:]))
+        cur_image = next_image
+    pyramid.append(cur_image)
+
+    return pyramid
+
+
+def tv_norm_multiscale(x, beta=2, max_levels=None):
+    loss = 0
+    grad = None
+    pyr = pyramid(x, max_levels)
+    cur_image = pyr[-1]
+    images = reversed(pyr[:-1])
+    try:
+        while True:
+            loss_, grad_ = tv_norm(cur_image, beta)
+            loss += loss_ * x.size / cur_image.size
+            if grad is None:
+                grad = np.zeros_like(grad_)
+            grad += grad_
+            image = next(images)
+            grad = resize(grad, image.shape[1:])
+            cur_image = resize(cur_image, image.shape[1:]) + image
+    except StopIteration:
+        pass
     return loss, grad
 
 
@@ -716,7 +756,8 @@ class StyleTransfer:
         normalize(grad)
 
         # Compute total variation gradient
-        tv_loss, tv_grad = tv_norm(self.model.img / 255, beta=ARGS.tv_power)
+        tv_loss, tv_grad = tv_norm_multiscale(self.model.img / 255, beta=ARGS.tv_power, max_levels=2)
+        # print(tv_loss, tv_norm(self.model.img / 255, ARGS.tv_power)[0])
         loss += lw * ARGS.tv_weight * tv_loss
 
         # Selectively blur edges more to obscure jitter and tile seams
