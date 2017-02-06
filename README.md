@@ -3,11 +3,11 @@
 Data-parallel image stylization using Caffe. Implements [A Neural Algorithm of Artistic Style](http://arxiv.org/abs/1508.06576) [1].
 
 Dependencies:
-- [Python](https://www.python.org) 2.7 or 3.5
-- [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 2.7 or 3.5
+- [Python](https://www.python.org) 2.7 or 3.5+
+- [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 2.7 or 3.5+
 - Python packages [numpy](http://www.numpy.org), [Pillow](https://python-pillow.org), [posix-ipc](http://semanchuk.com/philip/posix_ipc/), [scipy](http://www.scipy.org), [six](https://pythonhosted.org/six/)
 
-The current preferred Python distribution for `style_transfer` is [Anaconda](https://www.continuum.io/downloads) (Python 3.5 version). `style_transfer` will run faster with Anaconda than with other Python distributions due to its inclusion of the [MKL](https://software.intel.com/en-us/intel-mkl) BLAS (mathematics) library. In addition, if you are running Caffe without a GPU, `style_transfer` will run a great deal faster if compiled with MKL (`BLAS := mkl` in `Makefile.config`).
+The current preferred Python distribution for `style_transfer` is [Anaconda](https://www.continuum.io/downloads) (Python 3.5+ version). `style_transfer` will run faster with Anaconda than with other Python distributions due to its inclusion of the [MKL](https://software.intel.com/en-us/intel-mkl) BLAS (mathematics) library. In addition, if you are running Caffe without a GPU, `style_transfer` will run a great deal faster if compiled with MKL (`BLAS := mkl` in `Makefile.config`).
 
 [Cloud computing images](https://github.com/crowsonkb/style_transfer/wiki/Cloud-computing-images) are available with `style_transfer` and its dependencies preinstalled.
 
@@ -16,9 +16,7 @@ The current preferred Python distribution for `style_transfer` is [Anaconda](htt
 - The image is divided into tiles which are processed one per GPU at a time. Since the tiles can be sized so as to fit into GPU memory, this allows arbitrary size images to be processed&mdash;including print size. Tile seam suppression is applied after every iteration so that seams do not accumulate and become visible. (ex: `--size 2048 --tile-size 1024`)
 - Images can be processed at multiple scales. For instance, `--size 512 768 1024 1536 2048 -i 100` will run 100 iterations at 512x512, then 100 at 768x768, then 100 more at 1024x1024 etc. Each scale's final iterate is used as the initial iterate for the following scale. Processing a large image at smaller scales first markedly improves output quality.
 - Multi-GPU support (ex: `--devices 0 1 2 3`). Four GPUs, for instance, can process four tiles at a time.
-- Averages successive iterates [2] to reduce image noise.
 - Can perform simultaneous Deep Dream and image stylization.
-- Adam (gradient descent) [4] and L-BFGS [6] optimizers. L-BFGS is used with a nonmonotone line search that has been adapted for nonsmooth, nonconvex problems.
 
 ## Known issues
 
@@ -102,8 +100,6 @@ pip3 install -Ur requirements.txt
 ## References
 
 [1] L. Gatys, A. Ecker, M. Bethge, "[A Neural Algorithm of Artistic Style](https://arxiv.org/abs/1508.06576)"
-
-[2] O. Shamir, T. Zhang, "[Stochastic Gradient Descent for Non-smooth Optimization: Convergence Results and Optimal Averaging Schemes](http://jmlr.csail.mit.edu/proceedings/papers/v28/shamir13.pdf)"
 
 [3] A. Mahendran, A. Vedaldi, "[Understanding Deep Image Representations by Inverting Them](https://arxiv.org/abs/1412.0035)"
 

@@ -217,22 +217,18 @@ class LayerIndexer:
 
 
 class AdamOptimizer:
-    """Implements the Adam gradient descent optimizer [4] with polynomial-decay averaging [2]."""
-    def __init__(self, params, step_size=1, averaging=True, avg_decay=0, b1=0.9, b2=0.999):
+    """Implements the Adam gradient descent optimizer [4] with iterate averaging."""
+    def __init__(self, params, step_size=1, b1=0.9, b2=0.999, bp1=0):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
-        self.averaging = averaging
-        assert avg_decay >= 0
-        self.avg_decay = avg_decay
-        self.b1 = b1
-        self.b2 = b2
+        self.b1, self.b2, self.bp1 = b1, b2, bp1
 
         self.step = 0
         self.xy = np.zeros(2, dtype=np.int32)
         self.g1 = np.zeros_like(params)
         self.g2 = np.zeros_like(params)
-        self.p1 = params.copy()
+        self.p1 = np.zeros_like(params)
 
     def update(self, opfunc):
         """Returns a step's parameter update given a loss/gradient evaluation function."""
@@ -250,14 +246,10 @@ class AdamOptimizer:
         step = g1_bar / (np.sqrt(self.g2) + EPS)
         axpy(-step_size, step, self.params)
 
-        # Polynomial-decay averaging
-        weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
-        self.p1 *= 1 - weight
-        axpy(weight, self.params, self.p1)
-        if self.averaging:
-            return self.p1, loss
-        else:
-            return self.params, loss
+        # Iterate averaging
+        self.p1 *= self.bp1
+        axpy(1 - self.bp1, self.params, self.p1)
+        return roll2(self.p1, -self.xy) / (1-self.bp1**self.step), loss
 
     def roll(self, xy):
         """Rolls the optimizer's internal state."""
@@ -271,9 +263,6 @@ class AdamOptimizer:
     def set_params(self, last_iterate):
         """Sets params to the supplied array (a possibly-resized or altered last non-averaged
         iterate), resampling the optimizer's internal state if the shape has changed."""
-        # Only average over the current scale. The result looks better if Adam is provided with an
-        # incorrect step number for its resampled internal state.
-        self.step = 0
         self.params = last_iterate
         hw = self.params.shape[-2:]
         self.g1 = resize(self.g1, hw)
@@ -291,279 +280,6 @@ class AdamOptimizer:
         self.xy = optimizer.xy.copy()
         self.roll(-self.xy)
 
-
-class LBFGSOptimizer:
-    """Implements the L-BFGS quasi-Newton optimizer [6] with polynomial-decay averaging [2]."""
-    def __init__(self, params, step_size=1, averaging=True, avg_decay=1, n_corr=10, c1=1.02,
-                 c2=0.9, max_ls_fevals=10):
-        """Initializes the optimizer."""
-        self.params = params
-        self.step_size = step_size
-        self.averaging = averaging
-        assert avg_decay >= 0
-        self.avg_decay = avg_decay
-        self.n_corr = n_corr
-        self.c1 = c1
-        self.c2 = c2
-        self.max_ls_fevals = max_ls_fevals
-
-        self.step = 0
-        self.xy = np.zeros(2, dtype=np.int32)
-        self.loss = None
-        self.grad = None
-        self.p1 = params.copy()
-        self.sk = []
-        self.yk = []
-
-    def update(self, opfunc):
-        """Returns a step's parameter update given a loss/gradient evaluation function."""
-        self.step += 1
-
-        if self.step == 1:
-            self.loss, self.grad = opfunc(self.params)
-
-        # Line search. The Armijo rule is invalid due to gradient normalization, and the problem
-        # is nonsmooth, so enforce a simple rule bounding the growth in the loss function and the
-        # weak Wolfe curvature condition. From [7].
-        step_size, step_min, step_max = 1, 0, np.inf
-        ls_fevals = 0
-        while True:
-            if ls_fevals == self.max_ls_fevals:
-                # Give up and take a gradient descent step instead
-                print_('Giving up on line search.')
-                s = -self.step_size * self.grad
-                loss, grad = opfunc(self.params + s)
-                y = grad - self.grad
-                break
-
-            # Compute search direction, step, loss, and gradient
-            p = -self.inv_hv(self.grad)
-            s = step_size * p
-            loss, grad = opfunc(self.params + s)
-            y = grad - self.grad
-            ls_fevals += 1
-
-            # Test that the weak Wolfe curvature condition holds
-            if dot(p, grad) < self.c2 * dot(p, self.grad):
-                step_min = step_size
-            # Test that the growth in the loss function is acceptable
-            elif self.loss > 0 and loss > self.c1 * self.loss:
-                step_max = step_size
-                self.store_curvature_pair(s, y)
-            # Both hold, accept the step
-            else:
-                break
-
-            # Compute new step size
-            if step_max < np.inf:
-                step_size = (step_min + step_max) / 2
-            else:
-                step_size *= 2
-
-        # Update params
-        self.params += s
-
-        # Store curvature pair and gradient
-        self.store_curvature_pair(s, y)
-        self.loss, self.grad = loss, grad
-
-        # Polynomial-decay averaging
-        weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
-        self.p1 *= 1 - weight
-        axpy(weight, self.params, self.p1)
-        if self.averaging:
-            return self.p1, loss
-        else:
-            return self.params, loss
-
-    def store_curvature_pair(self, s, y):
-        """Updates the L-BFGS memory with a new curvature pair."""
-        self.sk.append(s)
-        self.yk.append(y)
-        if len(self.sk) > self.n_corr:
-            self.sk, self.yk = self.sk[1:], self.yk[1:]
-
-    def inv_hv(self, p):
-        """Computes the product of a vector with an approximation of the inverse Hessian."""
-        p = p.copy()
-        alphas = []
-        for s, y in zip(reversed(self.sk), reversed(self.yk)):
-            alphas.append(dot(s, p) / (dot(s, y)) + EPS)
-            axpy(-alphas[-1], y, p)
-
-        if len(self.sk) > 0:
-            s, y = self.sk[-1], self.yk[-1]
-            p *= dot(s, y) / (dot(y, y) + EPS)
-        else:
-            p /= np.sqrt(dot(p, p) / p.size) + EPS
-
-        for s, y, alpha in zip(self.sk, self.yk, reversed(alphas)):
-            beta = dot(y, p) / (dot(s, y) + EPS)
-            axpy(alpha - beta, s, p)
-
-        return p
-
-    def roll(self, xy):
-        """Rolls the optimizer's internal state."""
-        if (xy == 0).all():
-            return
-        self.xy += xy
-        if self.grad is not None:
-            self.grad[:] = roll2(self.grad, xy)
-        self.p1[:] = roll2(self.p1, xy)
-        for i in range(len(self.sk)):
-            self.sk[i][:] = roll2(self.sk[i], xy)
-            self.yk[i][:] = roll2(self.yk[i], xy)
-
-    def set_params(self, last_iterate):
-        """Sets params to the supplied array, clearing the optimizer's internal state."""
-        self.step = 0
-        self.params = last_iterate
-        self.loss = None
-        self.grad = None
-        self.p1 = resize(self.p1, self.params.shape[-2:])
-        self.sk = []
-        self.yk = []
-
-    def restore_state(self, optimizer):
-        """Given an LBFGSOptimizer instance, restores internal state from it."""
-        assert isinstance(optimizer, LBFGSOptimizer)
-        self.params = optimizer.params
-        self.loss = optimizer.loss
-        self.grad = optimizer.grad
-        self.p1 = optimizer.p1
-        self.sk = optimizer.sk
-        self.yk = optimizer.yk
-        self.step = optimizer.step
-        self.xy = optimizer.xy.copy()
-        self.roll(-self.xy)
-
-
-class DMSQNOptimizer:
-    """Implements an experimental Quasi-Newton optimizer that incorporates Hessian damping,
-    momentum, per-feature learning rate scaling, and iterate averaging."""
-    def __init__(self, params, step_size=2, averaging=True, avg_decay=3, n_corr=10, b1=0.75,
-                 phi=0.2):
-        """Initializes the optimizer."""
-        self.params = params
-        self.step_size = step_size
-        self.averaging = averaging
-        assert avg_decay >= 0
-        self.avg_decay = avg_decay
-        self.n_corr = n_corr
-        self.b1 = b1
-        self.phi = phi
-
-        self.step = 0
-        self.xy = np.zeros(2, dtype=np.int32)
-        self.grad = None
-        self.g1 = np.zeros_like(params)
-        self.g2 = np.zeros_like(params) + EPS
-        self.p1 = params.copy()
-        self.sk = []
-        self.yk = []
-
-    def update(self, opfunc):
-        """Returns a step's parameter update given a loss/gradient evaluation function."""
-        self.step += 1
-
-        if self.step == 1:
-            _, self.grad = opfunc(self.params)
-            self.g1 *= self.b1
-            self.g1 += self.grad
-            self.g2 += self.grad**2
-
-        # Compute step, loss, and gradient
-        self.g1 *= self.b1
-        s = -self.step_size * self.inv_hv(self.g1 + self.grad)
-        self.params += s
-        loss, grad = opfunc(self.params)
-        self.g1 += grad
-        self.g2 += grad**2
-
-        # Store curvature pair and gradient
-        y = (1 - self.phi) * (grad - self.grad)
-        axpy(self.phi, s, y)
-        y *= np.sqrt(self.g2)
-        self.store_curvature_pair(s, y)
-        self.grad = grad
-
-        # Polynomial-decay averaging
-        weight = (1 + self.avg_decay) / (self.step + self.avg_decay)
-        self.p1 *= 1 - weight
-        axpy(weight, self.params, self.p1)
-        if self.averaging:
-            return self.p1, loss
-        else:
-            return self.params, loss
-
-    def store_curvature_pair(self, s, y):
-        """Updates the L-BFGS memory with a new curvature pair."""
-        self.sk.append(s)
-        self.yk.append(y)
-        if len(self.sk) > self.n_corr:
-            self.sk, self.yk = self.sk[1:], self.yk[1:]
-
-    def inv_hv(self, p):
-        """Computes the product of a vector with an approximation of the inverse Hessian."""
-        p = p.copy()
-        alphas = []
-        for s, y in zip(reversed(self.sk), reversed(self.yk)):
-            alphas.append(dot(s, p) / dot(s, y))
-            axpy(-alphas[-1], y, p)
-
-        if len(self.sk) > 0:
-            s, y = self.sk[-1], self.yk[-1]
-            p *= dot(s, y) / dot(y, y)
-        else:
-            p /= np.sqrt(self.g2)
-
-        for s, y, alpha in zip(self.sk, self.yk, reversed(alphas)):
-            beta = dot(y, p) / dot(s, y)
-            axpy(alpha - beta, s, p)
-
-        return p
-
-    def roll(self, xy):
-        """Rolls the optimizer's internal state."""
-        if (xy == 0).all():
-            return
-        self.xy += xy
-        if self.grad is not None:
-            self.grad[:] = roll2(self.grad, xy)
-        self.g1[:] = roll2(self.g1, xy)
-        self.g2[:] = roll2(self.g2, xy)
-        self.p1[:] = roll2(self.p1, xy)
-        for i in range(len(self.sk)):
-            self.sk[i][:] = roll2(self.sk[i], xy)
-            self.yk[i][:] = roll2(self.yk[i], xy)
-
-    def set_params(self, last_iterate):
-        """Sets params to the supplied array, partially clearing the optimizer's internal state."""
-        self.step = 0
-        self.params = last_iterate
-        self.grad = None
-        xy = self.params.shape[-2:]
-        self.g1 = resize(self.g1, xy)
-        self.g2 = np.maximum(resize(self.g2, xy, method=Image.BILINEAR), EPS)
-        self.g2 *= self.g2.size / last_iterate.size
-        self.p1 = np.zeros_like(last_iterate)
-        self.sk = []
-        self.yk = []
-
-    def restore_state(self, optimizer):
-        """Given a DMSQNOptimizer instance, restores internal state from it."""
-        assert isinstance(optimizer, DMSQNOptimizer)
-        self.params = optimizer.params
-        self.grad = optimizer.grad
-        self.g1 = optimizer.g1
-        self.g2 = optimizer.g2
-        self.p1 = optimizer.p1
-        self.sk = optimizer.sk
-        self.yk = optimizer.yk
-        self.step = optimizer.step
-        self.xy = optimizer.xy.copy()
-        self.roll(-self.xy)
 
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
@@ -996,7 +712,6 @@ class StyleTransfer:
 
         # Compute style+content gradient
         loss, grad = self.model.eval_sc_grad(*sc_grad_args)
-        loss += ARGS.shift_loss * self.model.img.size
         normalize(grad)
 
         # Compute total variation gradient
@@ -1122,16 +837,8 @@ class StyleTransfer:
 
                 # make sure the optimizer's params array shares memory with self.model.img
                 # after preprocess_image is called later
-                if ARGS.optimizer == 'adam':
                     self.optimizer = AdamOptimizer(
-                        self.model.img, step_size=ARGS.step_size, averaging=not ARGS.no_averaging,
-                        avg_decay=ARGS.avg_decay)
-                elif ARGS.optimizer == 'lbfgs':
-                    self.optimizer = LBFGSOptimizer(
-                        self.model.img, averaging=not ARGS.no_averaging, avg_decay=ARGS.avg_decay)
-                elif ARGS.optimizer == 'dmsqn':
-                    self.optimizer = DMSQNOptimizer(
-                        self.model.img, averaging=not ARGS.no_averaging, avg_decay=ARGS.avg_decay)
+                        self.model.img, step_size=ARGS.step_size, bp1=1-(1/ARGS.avg_window))
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
@@ -1144,10 +851,8 @@ class StyleTransfer:
 
             params = self.model.img
             iters_i = iterations[min(i, len(iterations)-1)]
-            output_image, last_iterate = self.transfer(iters_i, params, content_scaled,
-                                                       style_scaled, **kwargs)
-            if ARGS.init_with_avg or ARGS.optimizer == 'dmsqn':
-                last_iterate = output_image
+            output_image, _ = self.transfer(iters_i, params, content_scaled, style_scaled, **kwargs)
+            last_iterate = output_image
 
         return output_image
 
@@ -1284,22 +989,10 @@ def parse_args():
         '--style-scale-up', default=False, action='store_true',
         help='allow scaling style image up')
     parser.add_argument(
-        '--optimizer', '-o', default='adam', choices=['adam', 'lbfgs', 'dmsqn'],
-        help='the optimizer algorithm')
-    parser.add_argument(
         '--step-size', '-st', type=ffloat, default=15,
         help='the Adam step size (iteration magnitude)')
     parser.add_argument(
-        '--avg-decay', type=ffloat, default=1, help='the polynomial-decay averaging exponent')
-    parser.add_argument(
-        '--init-with-avg', default=False, action='store_true',
-        help='initialize each scale with the last averaged iterate')
-    parser.add_argument(
-        '--no-averaging', default=False, action='store_true',
-        help='disable averaging of successive iterates')
-    parser.add_argument(
-        '--shift-loss', type=ffloat, default=0,
-        help='add this value to the calculated loss. used for shifting negative loss above zero')
+        '--avg-window', type=ffloat, default=20, help='the iterate averaging window size')
     parser.add_argument(
         '--layer-weights', help='a json file containing per-layer weight scaling factors')
     parser.add_argument(
