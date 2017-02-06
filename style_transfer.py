@@ -240,10 +240,8 @@ class AdamOptimizer:
         axpy(1 - self.b1, grad, self.g1)
         self.g2 *= self.b2
         axpy(1 - self.b2, grad**2, self.g2)
-        g1_bar = self.b1 * self.g1
-        axpy(1 - self.b1, grad, g1_bar)
-        step_size = self.step_size * np.sqrt(1-self.b2**self.step) / (1-self.b1**(self.step+1))
-        step = g1_bar / (np.sqrt(self.g2) + EPS)
+        step_size = self.step_size * np.sqrt(1-self.b2**self.step) / (1-self.b1**self.step)
+        step = self.g1 / (np.sqrt(self.g2) + EPS)
         axpy(-step_size, step, self.params)
 
         # Iterate averaging
