@@ -8,6 +8,7 @@
 from __future__ import division
 
 import argparse
+import configparser
 from collections import namedtuple, OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from fractions import Fraction
@@ -18,6 +19,7 @@ import mmap
 import multiprocessing as mp
 import os
 import pickle
+import shlex
 import sys
 import threading
 import time
@@ -968,12 +970,18 @@ def ffloat(s):
 
 
 def parse_args():
-    """Parses command line arguments."""
+    """Parses command line arguments. Alternate default arguments are read from style_transfer.ini
+    (an alternate config can be specified by --config). The .ini file should begin with the
+    line [DEFAULT] and contain keys corresponding to the long option names."""
+    config_file = 'style_transfer.ini'
+
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('content_image', help='the content image')
     parser.add_argument('style_image', help='the style image')
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
+    parser.add_argument('--config', default=config_file,
+                        help='an ini file containing values for command line arguments')
     parser.add_argument('--init-image', metavar='IMAGE', help='the initial image')
     parser.add_argument('--aux-image', metavar='IMAGE', help='the auxiliary image')
     parser.add_argument('--state', help='a .state file (the initial state)')
@@ -1045,8 +1053,20 @@ def parse_args():
         '--seed', type=int, default=0, help='the random seed')
     parser.add_argument(
         '--list-layers', action='store_true', help='list the model\'s layers')
+
     global ARGS  # pylint: disable=global-statement
-    ARGS = parser.parse_args()
+    args_from_cli = parser.parse_args()
+    config = configparser.ConfigParser()
+    if os.path.exists(args_from_cli.config) or args_from_cli.config != config_file:
+        config.read_file(open(args_from_cli.config))
+    config_args = [None, None]
+    for k, v in config['DEFAULT'].items():
+        config_args.append('--' + k.replace('_', '-'))
+        if v:
+            config_args.extend(shlex.split(v))
+    config_parsed = parser.parse_args(args=config_args)
+    new_defaults = {arg: getattr(config_parsed, arg) for arg in config['DEFAULT']}
+    ARGS = parser.parse_args(namespace=argparse.Namespace(**new_defaults))
 
 
 def print_args():
