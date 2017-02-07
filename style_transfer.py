@@ -29,7 +29,7 @@ import numpy as np
 from PIL import Image, PngImagePlugin
 import posix_ipc
 from scipy.linalg import blas
-from scipy.ndimage import zoom
+from scipy.ndimage import convolve, zoom
 import six
 from six import print_
 from six.moves import cPickle as pickle
@@ -287,8 +287,11 @@ SCGradRequest = namedtuple('SCGradRequest',
                            '''resp img roll start content_layers style_layers dd_layers
                            layer_weights content_weight style_weight dd_weight''')
 SCGradResponse = namedtuple('SCGradResponse', 'resp loss grad')
-SetFeaturesAndGrams = namedtuple('SetFeaturesAndGrams', 'features grams')
+SetContentsAndStyles = namedtuple('SetContentsAndStyles', 'contents styles')
 SetThreadCount = namedtuple('SetThreadCount', 'threads')
+
+ContentData = namedtuple('ContentData', 'features masks')
+StyleData = namedtuple('StyleData', 'grams masks')
 
 
 class TileWorker:
@@ -299,8 +302,6 @@ class TileWorker:
         self.model = None
         self.model_info = (model.deploy, model.weights, model.mean, model.net_type, model.shapes)
         self.device = device
-        self.features = None
-        self.grams = None
         self.proc = CTX.Process(target=self.run)
         self.proc.daemon = True
         self.proc.start()
@@ -355,11 +356,21 @@ class TileWorker:
             self.model.roll(-req.roll, jitter_scale=1)
             self.resp_q.put(SCGradResponse(req.resp, loss, SharedNDArray.copy(grad)))
 
-        if isinstance(req, SetFeaturesAndGrams):
-            self.model.features = \
-                {layer: req.features[layer].array.copy() for layer in req.features}
-            self.model.grams = \
-                {layer: req.grams[layer].array.copy() for layer in req.grams}
+        if isinstance(req, SetContentsAndStyles):
+            self.model.contents, self.model.styles = [], []
+
+            for content in req.contents:
+                features = \
+                    {layer: content.features[layer].array.copy() for layer in content.features}
+                masks = \
+                    {layer: content.masks[layer].array.copy() for layer in content.masks}
+                self.model.contents.append(ContentData(features, masks))
+            for style in req.styles:
+                grams = \
+                    {layer: style.grams[layer].array.copy() for layer in style.grams}
+                masks = \
+                    {layer: style.masks[layer].array.copy() for layer in style.masks}
+                self.model.styles.append(StyleData(grams, masks))
             self.resp_q.put(())
 
         if isinstance(req, SetThreadCount):
@@ -380,8 +391,7 @@ class TileWorkerPool:
         self.resp_q = CTX.Queue()
         self.is_healthy = True
         for device in devices:
-            self.workers.append(
-                TileWorker(CTX.Queue(), self.resp_q, model, device))
+            self.workers.append(TileWorker(CTX.Queue(), self.resp_q, model, device))
 
     def __del__(self):
         self.is_healthy = False
@@ -413,16 +423,34 @@ class TileWorkerPool:
                 self.__del__()
                 raise TileWorkerPoolError('Pool malfunction; terminating')
 
-    def set_features_and_grams(self, features, grams):
+    def set_contents_and_styles(self, contents, styles):
         """Propagates feature maps and Gram matrices to all TileWorkers."""
+        content_shms, style_shms = [], []
+
         for worker in self.workers:
-            features_shm = {layer: SharedNDArray.copy(features[layer]) for layer in features}
-            grams_shm = {layer: SharedNDArray.copy(grams[layer]) for layer in grams}
-            worker.req_q.put(SetFeaturesAndGrams(features_shm, grams_shm))
-        for _ in self.workers:
-            self.resp_q.get()
-        _ = [shm.unlink() for shm in features_shm.values()]
-        _ = [shm.unlink() for shm in grams_shm.values()]
+            for content in contents:
+                features_shm = {layer: SharedNDArray.copy(content.features[layer])
+                                for layer in content.features}
+                masks_shm = {layer: SharedNDArray.copy(content.masks[layer])
+                             for layer in content.masks}
+                content_shms.append(ContentData(features_shm, masks_shm))
+
+            for style in styles:
+                grams_shm = {layer: SharedNDArray.copy(style.grams[layer])
+                             for layer in style.grams}
+                masks_shm = {layer: SharedNDArray.copy(style.masks[layer])
+                             for layer in style.masks}
+                style_shms.append(StyleData(grams_shm, masks_shm))
+
+            worker.req_q.put(SetContentsAndStyles(content_shms, style_shms))
+
+        self.resp_q.get()
+        for shm in content_shms:
+            _ = [shm.unlink() for shm in shm.features.values()]
+            _ = [shm.unlink() for shm in shm.masks.values()]
+        for shm in style_shms:
+            _ = [shm.unlink() for shm in shm.grams.values()]
+            _ = [shm.unlink() for shm in shm.masks.values()]
 
     def set_thread_count(self, threads):
         """Sets the MKL thread count per worker process."""
@@ -448,8 +476,8 @@ class CaffeModel:
             self.net = caffe.Net(self.deploy, 1, weights=self.weights)
             self.data = LayerIndexer(self.net, 'data')
             self.diff = LayerIndexer(self.net, 'diff')
-        self.features = None
-        self.grams = None
+        self.contents = []
+        self.styles = []
         self.img = None
 
     def get_image(self, params=None):
@@ -492,6 +520,22 @@ class CaffeModel:
     def layer_info(self, layer):
         """Returns the scale factor vs. the image and the number of channels."""
         return 224 // self.shapes[layer][1], self.shapes[layer][0]
+
+    def make_layer_masks(self, mask):
+        masks = {}
+        for layer in self.layers():
+            if layer.startswith('conv'):
+                mask = convolve(mask, np.ones((3, 3)) / 9, mode='nearest')
+            if layer.startswith('pool'):
+                if mask.shape[0] % 2 == 1:
+                    mask = np.resize(mask, (mask.shape[0] + 1, mask.shape[1]))
+                    mask[-1, :] = mask[-2, :]
+                if mask.shape[1] % 2 == 1:
+                    mask = np.resize(mask, (mask.shape[0], mask.shape[1] + 1))
+                    mask[:, -1] = mask[:, -2]
+                mask = convolve(mask, np.ones((2, 2)) / 4, mode='nearest')[::2, ::2]
+            masks[layer] = mask
+        return masks
 
     def eval_features_tile(self, img, layers):
         """Computes a single tile in a set of feature maps."""
@@ -541,25 +585,27 @@ class CaffeModel:
         img_size = np.array(self.img.shape[-2:])
         if max(*img_size) <= tile_size:
             passes = 1
-        self.features = {}
+        features = {}
         for i in range(passes):
             xy = np.array((0, 0))
             if i > 0:
                 xy = np.int32(np.random.uniform(size=2) * img_size) // 32
             self.roll(xy)
+            features = {k: roll2(v, xy) for k, v in features.items()}
             feats = self.eval_features_once(pool, layers, tile_size)
             for layer in layers:
                 if i == 0:
-                    self.features[layer] = feats[layer]
+                    features[layer] = feats[layer]
                 else:
-                    axpy(1, feats[layer], self.features[layer])
+                    axpy(1, feats[layer], features[layer])
             self.roll(-xy)
-        for layer in self.features:
-            self.features[layer] /= passes
-        return self.features
+            features = {k: roll2(v, -xy) for k, v in features.items()}
+        for layer in features:
+            features[layer] /= passes
+        return features
 
-    def preprocess_images(self, pool, content_image, style_images, content_layers, style_layers,
-                          tile_size=512):
+    def preprocess_images(self, pool, content_images, style_images, content_layers, style_layers,
+                          content_masks, style_masks, tile_size=512):
         """Performs preprocessing tasks on the input images."""
         # Construct list of layers to visit during the backward pass
         layers = []
@@ -569,20 +615,25 @@ class CaffeModel:
 
         # Prepare Gram matrices from style image
         print_('Preprocessing the style image...')
-        self.grams = {}
+        grams = {}
         for layer in style_layers:
             _, ch = self.layer_info(layer)
-            self.grams[layer] = np.zeros((ch, ch), np.float32)
-        for image in style_images:
+            grams[layer] = np.zeros((ch, ch), np.float32)
+        for image, mask in zip(style_images, style_masks):
             self.set_image(image)
             feats = self.prepare_features(pool, style_layers, tile_size)
             for layer in feats:
-                axpy(1 / len(style_images), gram_matrix(feats[layer]), self.grams[layer])
+                axpy(1 / len(style_images), gram_matrix(feats[layer]), grams[layer])
+            masks = self.make_layer_masks(mask)
+            self.styles.append(StyleData(grams, masks))
 
         # Prepare feature maps from content image
-        print_('Preprocessing the content image...')
-        self.set_image(content_image)
-        self.prepare_features(pool, content_layers, tile_size)
+        for image, mask in zip(content_images, content_masks):
+            print_('Preprocessing the content image...')
+            self.set_image(image)
+            feats = self.prepare_features(pool, content_layers, tile_size)
+            masks = self.make_layer_masks(mask)
+            self.contents.append(ContentData(feats, masks))
 
         return layers
 
@@ -601,23 +652,35 @@ class CaffeModel:
         for i, layer in enumerate(layers):
             lw = layer_weights[layer]
 
-            # Compute the content and style gradients
-            if layer in content_layers:
+            def eval_c_grad(layer, content):
+                nonlocal loss
                 scale, _ = self.layer_info(layer)
-                start = start // scale
-                end = start + np.array(self.data[layer].shape[-2:])
-                feat = self.features[layer][:, start[0]:end[0], start[1]:end[1]]
-                c_grad = self.data[layer] - feat
+                start_ = start // scale
+                end = start_ + np.array(self.data[layer].shape[-2:])
+                feat = content.features[layer][:, start[0]:end[0], start[1]:end[1]]
+                c_grad = (self.data[layer] - feat) * content.masks[layer]
                 loss += lw * content_weight[layer] * norm2(c_grad)
                 axpy(lw * content_weight[layer], normalize(c_grad), self.diff[layer])
-            if layer in style_layers:
+
+            def eval_s_grad(layer, style):
+                nonlocal loss
                 current_gram = gram_matrix(self.data[layer])
                 n, mh, mw = self.data[layer].shape
                 feat = self.data[layer].reshape((n, mh * mw))
-                s_grad = blas.ssymm(1, current_gram - self.grams[layer], feat)
+                s_grad = blas.ssymm(1, current_gram - style.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
-                loss += lw * style_weight[layer] * norm2(current_gram - self.grams[layer]) / 2
+                s_grad *= style.masks[layer]
+                loss += lw * style_weight[layer] * norm2(current_gram - style.grams[layer]) * \
+                    np.mean(style.masks[layer]) / 2
                 axpy(lw * style_weight[layer], normalize(s_grad), self.diff[layer])
+
+            # Compute the content and style gradients
+            if layer in content_layers:
+                for content in self.contents:
+                    eval_c_grad(layer, content)
+            if layer in style_layers:
+                for style in self.styles:
+                    eval_s_grad(layer, style)
             if layer in dd_layers:
                 loss -= lw * dd_weight[layer] * norm2(self.data[layer])
                 axpy(-lw * dd_weight[layer], normalize(self.data[layer]), self.diff[layer])
@@ -664,13 +727,24 @@ class CaffeModel:
         return loss, grad
 
     def roll(self, xy, jitter_scale=32):
-        """Rolls image and feature maps."""
+        """Rolls image, feature maps, and layer masks."""
         xy = xy * jitter_scale
         if (xy == 0).all():
             return
-        for layer, feat in self.features.items():
-            scale, _ = self.layer_info(layer)
-            self.features[layer][:] = roll2(feat, xy // scale)
+
+        for content in self.contents:
+            for layer, feat in content.features.items():
+                scale, _ = self.layer_info(layer)
+                content.features[layer][:] = roll2(feat, xy // scale)
+            for layer, mask in content.masks.items():
+                scale, _ = self.layer_info(layer)
+                content.masks[layer][:] = roll2(mask, xy // scale)
+
+        for style in self.styles:
+            for layer, mask in style.masks.items():
+                scale, _ = self.layer_info(layer)
+                style.masks[layer][:] = roll2(mask, xy // scale)
+
         self.img[:] = roll2(self.img, xy)
 
 
@@ -745,16 +819,19 @@ class StyleTransfer:
         self.model.img = old_img
         return loss, grad
 
-    def transfer(self, iterations, params, content_image, style_images, callback=None):
+    def transfer(self, iterations, params, content_images, style_images,
+                 content_masks, style_masks, callback=None):
         """Performs style transfer from style_image to content_image."""
         content_layers, content_weight = self.parse_weights(ARGS.content_layers,
                                                             ARGS.content_weight)
         style_layers, style_weight = self.parse_weights(ARGS.style_layers, 1)
         dd_layers, dd_weight = self.parse_weights(ARGS.dd_layers, ARGS.dd_weight)
 
+        self.model.contents, self.model.styles = [], []
         layers = self.model.preprocess_images(
-            self.pool, content_image, style_images, content_layers, style_layers, ARGS.tile_size)
-        self.pool.set_features_and_grams(self.model.features, self.model.grams)
+            self.pool, content_images, style_images, content_layers, style_layers,
+            content_masks, style_masks, ARGS.tile_size)
+        self.pool.set_contents_and_styles(self.model.contents, self.model.styles)
         self.model.img = params
 
         old_img = self.model.img.copy()
@@ -807,7 +884,7 @@ class StyleTransfer:
 
         return self.current_output
 
-    def transfer_multiscale(self, sizes, iterations, content_image, style_images, initial_image,
+    def transfer_multiscale(self, sizes, iterations, content_images, style_images, initial_image,
                             aux_image, initial_state=None, **kwargs):
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
@@ -816,25 +893,34 @@ class StyleTransfer:
         self.pool = TileWorkerPool(self.model, ARGS.devices)
 
         for i, size in enumerate(sizes):
-            content_scaled = resize_to_fit(content_image, size, scale_up=True)
+            content_scaled = []
+            content_masks_scaled = []
+            for image in content_images:
+                content_scaled.append(resize_to_fit(image, size, scale_up=True))
+                w, h = content_scaled[-1].size
+                content_masks_scaled.append(np.ones((h, w), np.float32))
             style_scaled = []
+            style_masks_scaled = []
             for image in style_images:
                 style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale),
                                                   scale_up=ARGS.style_scale_up))
+                w, h = content_scaled[0].size
+                style_masks_scaled.append(np.ones((h, w), np.float32))
+
             if aux_image:
                 aux_scaled = aux_image.resize(content_scaled.size, Image.LANCZOS)
                 self.aux_image = self.model.pil_to_image(aux_scaled)
             if output_image:  # this is not the first scale
                 self.model.img = output_raw
-                self.model.resize_image(content_scaled.size)
+                self.model.resize_image(content_scaled[0].size)
                 params = self.model.img
                 self.optimizer.set_params(params)
             else:  # this is the first scale
                 if initial_image:  # and the user supplied an initial image
-                    initial_image = initial_image.resize(content_scaled.size, Image.LANCZOS)
+                    initial_image = initial_image.resize(content_scaled[0].size, Image.LANCZOS)
                     self.model.set_image(initial_image)
                 else:  # and the user did not supply an initial image
-                    w, h = content_scaled.size
+                    w, h = content_scaled[0].size
                     self.model.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
 
                 # make sure the optimizer's params array shares memory with self.model.img
@@ -846,14 +932,15 @@ class StyleTransfer:
                     self.optimizer.restore_state(initial_state)
                     if self.model.img.shape != self.optimizer.params.shape:
                         initial_image = self.model.get_image(self.optimizer.params)
-                        initial_image = initial_image.resize(content_scaled.size, Image.LANCZOS)
+                        initial_image = initial_image.resize(content_scaled[0].size, Image.LANCZOS)
                         self.model.set_image(initial_image)
                         self.optimizer.set_params(self.model.img)
                     self.model.img = self.optimizer.params
 
             params = self.model.img
             iters_i = iterations[min(i, len(iterations)-1)]
-            output_image = self.transfer(iters_i, params, content_scaled, style_scaled, **kwargs)
+            output_image = self.transfer(iters_i, params, content_scaled, style_scaled,
+                                         content_masks_scaled, style_masks_scaled, **kwargs)
             output_raw = self.current_raw
 
         return output_image
@@ -1160,7 +1247,7 @@ def main():
     np.random.seed(ARGS.seed)
     try:
         transfer.transfer_multiscale(
-            sizes, ARGS.iterations, content_image, style_images, initial_image, aux_image,
+            sizes, ARGS.iterations, [content_image], style_images, initial_image, aux_image,
             callback=server.progress, initial_state=state)
     except KeyboardInterrupt:
         print_()
