@@ -804,7 +804,7 @@ class StyleTransfer:
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
         p = ARGS.p_power
-        img_scaled = abs(self.model.img / 127.5)
+        img_scaled = abs((self.model.img + self.model.mean - 127.5) / 127.5)
         img_pow = img_scaled**(p-1)
         loss += lw * ARGS.p_weight * np.sum(img_pow * img_scaled)
         p_grad = p * np.sign(self.model.img) * img_pow
