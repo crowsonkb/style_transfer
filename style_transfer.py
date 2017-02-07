@@ -316,6 +316,8 @@ class TileWorker:
 
     def run(self):
         """This method runs in the new process."""
+        if ARGS.caffe_path:
+            sys.path.append(ARGS.caffe_path + '/python')
         if self.device >= 0:
             os.environ['CUDA_VISIBLE_DEVICES'] = str(self.device)
         import caffe
@@ -1084,6 +1086,7 @@ def parse_args():
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
     parser.add_argument('--config', default=config_file,
                         help='an ini file containing values for command line arguments')
+    parser.add_argument('--caffe-path', help='the path to the Caffe installation')
     parser.add_argument('--init-image', metavar='IMAGE', help='the initial image')
     parser.add_argument('--aux-image', metavar='IMAGE', help='the auxiliary image')
     parser.add_argument('--style-masks', nargs='+', metavar='MASK', default=[],
@@ -1193,6 +1196,8 @@ def get_image_comment():
 
 def init_model(resp_q, net_type):
     """Puts the list of layer shapes into resp_q. To be run in a separate process."""
+    if ARGS.caffe_path:
+        sys.path.append(ARGS.caffe_path + '/python')
     import caffe
     caffe.set_mode_cpu()
     model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, net_type)
@@ -1212,6 +1217,8 @@ def main():
         print_('MKL detected, %d threads maximum.\n' % MKL_THREADS)
 
     os.environ['GLOG_minloglevel'] = '2'
+    if ARGS.caffe_path:
+        sys.path.append(ARGS.caffe_path + '/python')
 
     print_('Loading %s.' % ARGS.weights)
     resp_q = CTX.Queue()
