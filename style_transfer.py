@@ -528,6 +528,7 @@ class CaffeModel:
         return 224 // self.shapes[layer][1], self.shapes[layer][0]
 
     def make_layer_masks(self, mask):
+        """Returns the set of content or style masks for each layer. Requires VGG models."""
         conv2x2 = np.float32(np.ones((2, 2))) / 4
         conv3x3 = np.float32(np.ones((3, 3))) / 9
         masks = {}
