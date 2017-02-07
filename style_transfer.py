@@ -98,6 +98,10 @@ def resize(a, hw, method=Image.LANCZOS):
         b[:] = Image.fromarray(a).resize((hw[1], hw[0]), method)
 
     a = np.float32(a)
+    if a.ndim == 2:
+        b = np.zeros(hw, np.float32)
+        _resize(a, b)
+        return b
     ch = a.shape[0]
     b = np.zeros((ch, hw[0], hw[1]), np.float32)
 
@@ -522,10 +526,13 @@ class CaffeModel:
         return 224 // self.shapes[layer][1], self.shapes[layer][0]
 
     def make_layer_masks(self, mask):
+        conv2x2 = np.float32(np.ones((2, 2))) / 4
+        conv3x3 = np.float32(np.ones((3, 3))) / 9
         masks = {}
+
         for layer in self.layers():
             if layer.startswith('conv'):
-                mask = convolve(mask, np.ones((3, 3)) / 9, mode='nearest')
+                mask = convolve(mask, conv3x3, mode='nearest')
             if layer.startswith('pool'):
                 if mask.shape[0] % 2 == 1:
                     mask = np.resize(mask, (mask.shape[0] + 1, mask.shape[1]))
@@ -533,8 +540,9 @@ class CaffeModel:
                 if mask.shape[1] % 2 == 1:
                     mask = np.resize(mask, (mask.shape[0], mask.shape[1] + 1))
                     mask[:, -1] = mask[:, -2]
-                mask = convolve(mask, np.ones((2, 2)) / 4, mode='nearest')[::2, ::2]
+                mask = convolve(mask, conv2x2, mode='nearest')[::2, ::2]
             masks[layer] = mask
+
         return masks
 
     def eval_features_tile(self, img, layers):
@@ -885,7 +893,7 @@ class StyleTransfer:
         return self.current_output
 
     def transfer_multiscale(self, sizes, iterations, content_images, style_images, initial_image,
-                            aux_image, initial_state=None, **kwargs):
+                            aux_image, content_masks, style_masks, initial_state=None, **kwargs):
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
         output_raw = None
@@ -897,16 +905,21 @@ class StyleTransfer:
             content_masks_scaled = []
             for image in content_images:
                 content_scaled.append(resize_to_fit(image, size, scale_up=True))
-                w, h = content_scaled[-1].size
+                w, h = content_scaled[0].size
                 content_masks_scaled.append(np.ones((h, w), np.float32))
             style_scaled = []
             style_masks_scaled = []
+            w, h = content_scaled[0].size
             for image in style_images:
                 style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale),
                                                   scale_up=ARGS.style_scale_up))
-                w, h = content_scaled[0].size
-                style_masks_scaled.append(np.ones((h, w), np.float32))
-
+            for arr in style_masks:
+                style_masks_scaled.append(resize(arr, (h, w)))
+            if len(style_masks) == 0:
+                for _ in style_scaled:
+                    style_masks_scaled.append(np.ones((h, w), np.float32))
+            elif len(style_masks) != len(style_scaled):
+                raise ValueError('There must be the same number of style images and masks')
             if aux_image:
                 aux_scaled = aux_image.resize(content_scaled.size, Image.LANCZOS)
                 self.aux_image = self.model.pil_to_image(aux_scaled)
@@ -1067,12 +1080,14 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('content_image', help='the content image')
-    parser.add_argument('style_image', help='the style image')
+    parser.add_argument('style_images', help='the style images')
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
     parser.add_argument('--config', default=config_file,
                         help='an ini file containing values for command line arguments')
     parser.add_argument('--init-image', metavar='IMAGE', help='the initial image')
     parser.add_argument('--aux-image', metavar='IMAGE', help='the auxiliary image')
+    parser.add_argument('--style-masks', nargs='+', metavar='MASK', default=[],
+                        help='the masks for each style image')
     parser.add_argument('--state', help='a .state file (the initial state)')
     parser.add_argument(
         '--iterations', '-i', nargs='+', type=int, default=[300], help='the number of iterations')
@@ -1213,14 +1228,16 @@ def main():
 
     sizes = sorted(ARGS.size)
     content_image = Image.open(ARGS.content_image).convert('RGB')
-    style_images = []
-    for image in ARGS.style_image.split(','):
+    style_images, style_masks = [], []
+    for image in ARGS.style_images.split(','):
         style_images.append(Image.open(image).convert('RGB'))
     initial_image, aux_image = None, None
     if ARGS.init_image:
         initial_image = Image.open(ARGS.init_image).convert('RGB')
     if ARGS.aux_image:
         aux_image = Image.open(ARGS.aux_image).convert('RGB')
+    for image in ARGS.style_masks:
+        style_masks.append(np.float32(Image.open(image).convert('L')) / 255)
 
     server_address = ('', ARGS.port)
     url = 'http://127.0.0.1:%d/' % ARGS.port
@@ -1248,7 +1265,7 @@ def main():
     try:
         transfer.transfer_multiscale(
             sizes, ARGS.iterations, [content_image], style_images, initial_image, aux_image,
-            callback=server.progress, initial_state=state)
+            [], style_masks, callback=server.progress, initial_state=state)
     except KeyboardInterrupt:
         print_()
 
