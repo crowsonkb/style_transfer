@@ -450,7 +450,9 @@ class TileWorkerPool:
 
             worker.req_q.put(SetContentsAndStyles(content_shms, style_shms))
 
-        self.resp_q.get()
+        for worker in self.workers:
+            self.resp_q.get()
+
         for shm in content_shms:
             _ = [shm.unlink() for shm in shm.features.values()]
             _ = [shm.unlink() for shm in shm.masks.values()]
