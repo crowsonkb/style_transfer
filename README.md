@@ -14,7 +14,7 @@ The current preferred Python distribution for `style_transfer` is [Anaconda](htt
 ## Features
 
 - The image is divided into tiles which are processed one per GPU at a time. Since the tiles can be sized so as to fit into GPU memory, this allows arbitrary size images to be processed&mdash;including print size. Tile seam suppression is applied after every iteration so that seams do not accumulate and become visible. (ex: `--size 2048 --tile-size 1024`)
-- Images can be processed at multiple scales. For instance, `--size 512 768 1024 1536 2048 -i 100` will run 100 iterations at 512x512, then 100 at 768x768, then 100 more at 1024x1024 etc. Each scale's final iterate is used as the initial iterate for the following scale. Processing a large image at smaller scales first markedly improves output quality.
+- Images are processed at multiple scales. Each scale's final iterate is used as the initial iterate for the following scale. Processing a large image at smaller scales first markedly improves output quality.
 - Multi-GPU support (ex: `--devices 0 1 2 3`). Four GPUs, for instance, can process four tiles at a time.
 - Can perform simultaneous Deep Dream and image stylization.
 
