@@ -1082,11 +1082,12 @@ def parse_args():
 
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('content_image', help='the content image')
-    parser.add_argument('style_images', help='the style images')
+    parser.add_argument('content_image', nargs='?', default=None, help='the content image')
+    parser.add_argument('style_images', nargs='?', default=None, help='the style images')
     parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
     parser.add_argument('--config', default=config_file,
                         help='an ini file containing values for command line arguments')
+    parser.add_argument('--list-layers', action='store_true', help='list the model\'s layers')
     parser.add_argument('--caffe-path', help='the path to the Caffe installation')
     parser.add_argument('--init-image', metavar='IMAGE', help='the initial image')
     parser.add_argument('--aux-image', metavar='IMAGE', help='the auxiliary image')
@@ -1159,8 +1160,6 @@ def parse_args():
         '--tile-size', type=int, default=512, help='the maximum rendering tile size')
     parser.add_argument(
         '--seed', type=int, default=0, help='the random seed')
-    parser.add_argument(
-        '--list-layers', action='store_true', help='list the model\'s layers')
 
     global ARGS  # pylint: disable=global-statement
     args_from_cli = parser.parse_args()
@@ -1175,6 +1174,9 @@ def parse_args():
     config_parsed = parser.parse_args(args=config_args)
     new_defaults = {arg: getattr(config_parsed, arg) for arg in config['DEFAULT']}
     ARGS = parser.parse_args(namespace=argparse.Namespace(**new_defaults))
+    if not ARGS.list_layers and (ARGS.content_image is None or ARGS.style_images is None):
+        parser.print_help()
+        sys.exit(1)
 
 
 def print_args():
