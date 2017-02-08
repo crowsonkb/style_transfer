@@ -604,17 +604,15 @@ class CaffeModel:
             if i > 0:
                 xy = np.int32(np.random.uniform(size=2) * img_size) // 32
             self.roll(xy)
-            features = {k: roll2(v, xy) for k, v in features.items()}
+            self.roll_features(features, xy)
             feats = self.eval_features_once(pool, layers, tile_size)
             for layer in layers:
                 if i == 0:
-                    features[layer] = feats[layer]
+                    features[layer] = feats[layer] / passes
                 else:
-                    axpy(1, feats[layer], features[layer])
+                    axpy(1 / passes, feats[layer], features[layer])
             self.roll(-xy)
-            features = {k: roll2(v, -xy) for k, v in features.items()}
-        for layer in features:
-            features[layer] /= passes
+            self.roll_features(features, -xy)
         return features
 
     def preprocess_images(self, pool, content_images, style_images, content_layers, style_layers,
@@ -740,26 +738,25 @@ class CaffeModel:
 
         return loss, grad
 
+    def roll_features(self, feats, xy, jitter_scale=32):
+        """Rolls an individual set of feature maps in-place."""
+        xy = xy * jitter_scale
+
+        for layer, feat in feats.items():
+            scale, _ = self.layer_info(layer)
+            feats[layer][:] = roll2(feat, xy // scale)
+
+        return feats
+
     def roll(self, xy, jitter_scale=32):
         """Rolls image, feature maps, and layer masks."""
-        xy = xy * jitter_scale
-        if (xy == 0).all():
-            return
-
         for content in self.contents:
-            for layer, feat in content.features.items():
-                scale, _ = self.layer_info(layer)
-                content.features[layer][:] = roll2(feat, xy // scale)
-            for layer, mask in content.masks.items():
-                scale, _ = self.layer_info(layer)
-                content.masks[layer][:] = roll2(mask, xy // scale)
-
+            self.roll_features(content.features, xy, jitter_scale)
+            self.roll_features(content.masks, xy, jitter_scale)
         for style in self.styles:
-            for layer, mask in style.masks.items():
-                scale, _ = self.layer_info(layer)
-                style.masks[layer][:] = roll2(mask, xy // scale)
+            self.roll_features(style.masks, xy, jitter_scale)
 
-        self.img[:] = roll2(self.img, xy)
+        self.img[:] = roll2(self.img, xy * jitter_scale)
 
 
 class StyleTransfer:
