@@ -664,14 +664,15 @@ class CaffeModel:
 
         for i, layer in enumerate(layers):
             lw = layer_weights[layer]
+            scale, _ = self.layer_info(layer)
+            start_ = start // scale
+            end = start_ + np.array(self.data[layer].shape[-2:])
 
             def eval_c_grad(layer, content):
                 nonlocal loss
-                scale, _ = self.layer_info(layer)
-                start_ = start // scale
-                end = start_ + np.array(self.data[layer].shape[-2:])
-                feat = content.features[layer][:, start[0]:end[0], start[1]:end[1]]
-                c_grad = (self.data[layer] - feat) * content.masks[layer]
+                feat = content.features[layer][:, start_[0]:end[0], start_[1]:end[1]]
+                c_grad = (self.data[layer] - feat) * \
+                    content.masks[layer][start_[0]:end[0], start_[1]:end[1]]
                 loss += lw * content_weight[layer] * norm2(c_grad)
                 axpy(lw * content_weight[layer], normalize(c_grad), self.diff[layer])
 
@@ -682,9 +683,9 @@ class CaffeModel:
                 feat = self.data[layer].reshape((n, mh * mw))
                 s_grad = blas.ssymm(1, current_gram - style.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
-                s_grad *= style.masks[layer]
+                s_grad *= style.masks[layer][start_[0]:end[0], start_[1]:end[1]]
                 loss += lw * style_weight[layer] * norm2(current_gram - style.grams[layer]) * \
-                    np.mean(style.masks[layer]) / 2
+                    np.mean(style.masks[layer][start_[0]:end[0], start_[1]:end[1]]) / 2
                 axpy(lw * style_weight[layer], normalize(s_grad), self.diff[layer])
 
             # Compute the content and style gradients
@@ -928,7 +929,7 @@ class StyleTransfer:
                 content_scaled.append(resize_to_fit(image, size, scale_up=True))
                 w, h = content_scaled[0].size
                 content_masks_scaled.append(np.ones((h, w), np.float32))
-            print('\nScale %d, image size %dx%d.\n' % (i+1, w, h))
+            print_('\nScale %d, image size %dx%d.\n' % (i+1, w, h))
             style_scaled = []
             style_masks_scaled = []
             for image in style_images:
