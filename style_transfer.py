@@ -895,24 +895,40 @@ class StyleTransfer:
 
         return self.current_output
 
-    def transfer_multiscale(self, sizes, iterations, content_images, style_images, initial_image,
-                            aux_image, content_masks, style_masks, initial_state=None, **kwargs):
+    def transfer_multiscale(self, content_images, style_images, initial_image, aux_image,
+                            content_masks, style_masks, initial_state=None, callback=None,
+                            **kwargs):
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
         output_raw = None
         print_('Starting %d worker process(es).' % len(ARGS.devices))
         self.pool = TileWorkerPool(self.model, ARGS.devices)
 
-        for i, size in enumerate(sizes):
+        size = ARGS.size
+        sizes = [ARGS.size]
+        while True:
+            size = round(size / np.sqrt(2))
+            if size < ARGS.min_size:
+                break
+            sizes.append(size)
+
+        steps = 0
+        for i in range(len(sizes)):
+            steps += ARGS.iterations[min(i, len(ARGS.iterations)-1)]
+        callback.set_steps(steps)
+
+        for i, size in enumerate(reversed(sizes)):
             content_scaled = []
             content_masks_scaled = []
             for image in content_images:
+                if image.size != content_images[0].size:
+                    raise ValueError('All of the content images must be the same size')
                 content_scaled.append(resize_to_fit(image, size, scale_up=True))
                 w, h = content_scaled[0].size
                 content_masks_scaled.append(np.ones((h, w), np.float32))
+            print('\nScale %d, image size %dx%d.\n' % (i+1, w, h))
             style_scaled = []
             style_masks_scaled = []
-            w, h = content_scaled[0].size
             for image in style_images:
                 style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale),
                                                   scale_up=ARGS.style_scale_up))
@@ -954,9 +970,10 @@ class StyleTransfer:
                     self.model.img = self.optimizer.params
 
             params = self.model.img
-            iters_i = iterations[min(i, len(iterations)-1)]
+            iters_i = ARGS.iterations[min(i, len(ARGS.iterations)-1)]
             output_image = self.transfer(iters_i, params, content_scaled, style_scaled,
-                                         content_masks_scaled, style_masks_scaled, **kwargs)
+                                         content_masks_scaled, style_masks_scaled, callback,
+                                         **kwargs)
             output_raw = self.current_raw
 
         return output_image
@@ -979,7 +996,7 @@ class Progress:
     def __init__(self, transfer, url=None, steps=-1, save_every=0):
         self.transfer = transfer
         self.url = url
-        self.steps = steps
+        self.steps = 0
         self.save_every = save_every
 
     def __call__(self, step=-1, update_size=np.nan, loss=np.nan, tv_loss=np.nan):
@@ -998,6 +1015,9 @@ class Progress:
         print_('Step %d, time: %.2f s, update: %.2f, loss: %.1f, tv: %.1f' %
                (step, self.t, update_size, loss, tv_loss), flush=True)
         self.prev_t = this_t
+
+    def set_steps(self, steps):
+        self.steps = steps
 
 
 class ProgressServer(ThreadingMixIn, HTTPServer):
@@ -1095,9 +1115,12 @@ def parse_args():
                         help='the masks for each style image')
     parser.add_argument('--state', help='a .state file (the initial state)')
     parser.add_argument(
-        '--iterations', '-i', nargs='+', type=int, default=[300], help='the number of iterations')
+        '--iterations', '-i', nargs='+', type=int, default=[200, 100],
+        help='the number of iterations')
     parser.add_argument(
-        '--size', '-s', nargs='+', type=int, default=[256], help='the output size(s)')
+        '--size', '-s', type=int, default=256, help='the output size')
+    parser.add_argument(
+        '--min-size', type=int, default=182, help='the minimum scale\'s size')
     parser.add_argument(
         '--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor')
     parser.add_argument(
@@ -1236,7 +1259,6 @@ def main():
             print_('% 25s %s' % (layer, shape))
         sys.exit(0)
 
-    sizes = sorted(ARGS.size)
     content_image = Image.open(ARGS.content_image).convert('RGB')
     style_images, style_masks = [], []
     for image in ARGS.style_images.split(','):
@@ -1258,8 +1280,6 @@ def main():
     if not ARGS.no_browser:
         progress_args['url'] = url
     steps = 0
-    for i in range(len(sizes)):
-        steps += ARGS.iterations[min(i, len(ARGS.iterations)-1)]
     server.progress = Progress(
         transfer, steps=steps, save_every=ARGS.save_every, **progress_args)
     th = threading.Thread(target=server.serve_forever)
@@ -1274,8 +1294,8 @@ def main():
     np.random.seed(ARGS.seed)
     try:
         transfer.transfer_multiscale(
-            sizes, ARGS.iterations, [content_image], style_images, initial_image, aux_image,
-            [], style_masks, callback=server.progress, initial_state=state)
+            [content_image], style_images, initial_image, aux_image, [], style_masks,
+            callback=server.progress, initial_state=state)
     except KeyboardInterrupt:
         print_()
 
