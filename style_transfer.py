@@ -285,6 +285,87 @@ class AdamOptimizer:
         self.roll(-self.xy)
 
 
+class LBFGSOptimizer:
+    def __init__(self, params, n_corr=10):
+        """L-BFGS for function minimization, with fixed size steps (no line search)."""
+        self.params = params
+        self.n_corr = n_corr
+        self.xy = np.zeros(2, dtype=np.int32)
+        self.loss = None
+        self.grad = None
+        self.sk = []
+        self.yk = []
+        self.syk = []
+
+    def update(self, opfunc):
+        """Take an L-BFGS step. Returns the new parameters and the loss after the step."""
+        if self.loss is None:
+            self.loss, self.grad = opfunc(self.params)
+
+        # Compute and take an L-BFGS step
+        s = -self.inv_hv(self.grad)
+        self.params += s
+
+        # Compute a curvature pair and store parameters for the next step
+        loss, grad = opfunc(self.params)
+        y = grad - self.grad
+        self.store_curvature_pair(s, y)
+        self.loss, self.grad = loss, grad
+
+        return self.params, loss
+
+    def store_curvature_pair(self, s, y):
+        """Updates the L-BFGS memory with a new curvature pair."""
+        sy = dot(s, y)
+        if sy > 1e-10:
+            self.sk.append(s)
+            self.yk.append(y)
+            self.syk.append(sy)
+        if len(self.sk) > self.n_corr:
+            self.sk, self.yk, self.syk = self.sk[1:], self.yk[1:], self.syk[1:]
+
+    def inv_hv(self, p):
+        """Computes the product of a vector with an approximation of the inverse Hessian."""
+        p = p.copy()
+        alphas = []
+        for s, y, sy in zip(reversed(self.sk), reversed(self.yk), reversed(self.syk)):
+            alphas.append(dot(s, p) / sy)
+            axpy(-alphas[-1], y, p)
+
+        if len(self.sk) > 0:
+            y, sy = self.yk[-1], self.syk[-1]
+            p *= sy / dot(y, y)
+        else:
+            p *= 1e-2 / np.mean(np.abs(p))
+
+        for s, y, sy, alpha in zip(self.sk, self.yk, self.syk, reversed(alphas)):
+            beta = dot(y, p) / sy
+            axpy(alpha - beta, s, p)
+
+        return p
+
+    def roll(self, xy):
+        """Rolls the optimizer's internal state."""
+        if (xy == 0).all():
+            return
+        self.xy += xy
+        if self.grad is not None:
+            self.grad[:] = roll2(self.grad, xy)
+        for i in range(len(self.sk)):
+            self.sk[i][:] = roll2(self.sk[i], xy)
+            self.yk[i][:] = roll2(self.yk[i], xy)
+
+    def set_params(self, last_iterate):
+        """Sets params to the supplied array (a possibly-resized or altered last non-averaged
+        iterate), resampling the optimizer's internal state if the shape has changed."""
+        self.params = last_iterate
+        self.loss, self.grad = None, None
+        self.sk, self.yk, self.syk = [], [], []
+
+    def restore_state(self, optimizer):
+        raise NotImplemented()
+
+
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
 FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
 SCGradRequest = namedtuple('SCGradRequest',
@@ -798,7 +879,7 @@ class StyleTransfer:
 
         # Compute style+content gradient
         loss, grad = self.model.eval_sc_grad(*sc_grad_args)
-        normalize(grad)
+        grad_norm = np.mean(np.abs(grad))
 
         # Compute total variation gradient
         tv_loss, tv_grad = tv_norm(self.model.img / 255, beta=ARGS.tv_power)
@@ -811,7 +892,7 @@ class StyleTransfer:
         tv_mask[:, :, :2] = 5
         tv_mask[:, :, -2:] = 5
         tv_grad *= tv_mask
-        axpy(lw * ARGS.tv_weight, tv_grad, grad)
+        axpy(lw * ARGS.tv_weight * grad_norm, tv_grad, grad)
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
         p = ARGS.p_power
@@ -819,13 +900,13 @@ class StyleTransfer:
         img_pow = img_scaled**(p-1)
         loss += lw * ARGS.p_weight * np.sum(img_pow * img_scaled)
         p_grad = p * np.sign(self.model.img) * img_pow
-        axpy(lw * ARGS.p_weight, p_grad, grad)
+        axpy(lw * ARGS.p_weight * grad_norm, p_grad, grad)
 
         # Compute auxiliary image gradient
         if self.aux_image is not None:
             aux_grad = (self.model.img - self.aux_image) / 255
             loss += lw * ARGS.aux_weight * norm2(aux_grad)
-            axpy(lw * ARGS.aux_weight, aux_grad, grad)
+            axpy(lw * ARGS.aux_weight * grad_norm, aux_grad, grad)
 
         self.model.img = old_img
         return loss, grad
@@ -957,8 +1038,9 @@ class StyleTransfer:
 
                 # make sure the optimizer's params array shares memory with self.model.img
                 # after preprocess_image is called later
-                self.optimizer = AdamOptimizer(
-                    self.model.img, step_size=ARGS.step_size, bp1=1-(1/ARGS.avg_window))
+                # self.optimizer = AdamOptimizer(
+                #     self.model.img, step_size=ARGS.step_size, bp1=1-(1/ARGS.avg_window))
+                self.optimizer = LBFGSOptimizer(self.model.img)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
