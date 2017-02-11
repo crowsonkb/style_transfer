@@ -10,6 +10,6 @@ if [[ ! -e .updated ]]; then
   echo 'Running style_transfer init/update.'
   git pull
   if [[ ! -e vgg19.caffemodel ]]; then
-    ./download_model.sh
+    ./download_models.sh
   fi
 fi
