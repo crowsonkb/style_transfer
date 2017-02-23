@@ -941,7 +941,7 @@ class StyleTransfer:
                 style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale),
                                                   scale_up=ARGS.style_scale_up))
             for arr in style_masks:
-                style_masks_scaled.append(resize(arr, (h, w)))
+                style_masks_scaled.append(np.maximum(0, resize(arr, (h, w)) / 255))
             if len(style_masks) == 0:
                 for _ in style_scaled:
                     style_masks_scaled.append(np.ones((h, w), np.float32))
