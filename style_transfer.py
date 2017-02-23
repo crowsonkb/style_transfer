@@ -898,14 +898,14 @@ def get_image_comment():
     return s
 
 
-def init_model(resp_q):
+def init_model(resp_q, caffe_path, model, weights, mean):
     """Puts the list of layer shapes into resp_q. To be run in a separate process."""
     setup_exceptions()
-    if ARGS.caffe_path:
-        sys.path.append(ARGS.caffe_path + '/python')
+    if caffe_path:
+        sys.path.append(caffe_path + '/python')
     import caffe
     caffe.set_mode_cpu()
-    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean)
+    model = CaffeModel(model, weights, mean)
     shapes = OrderedDict()
     for layer in model.layers():
         shapes[layer] = model.data[layer].shape
@@ -930,7 +930,8 @@ def main():
 
     print_('Loading %s.' % ARGS.weights)
     resp_q = CTX.Queue()
-    CTX.Process(target=init_model, args=(resp_q,)).start()
+    CTX.Process(target=init_model,
+                args=(resp_q, ARGS.caffe_path, ARGS.model, ARGS.weights, ARGS.mean)).start()
     shapes = resp_q.get()
     model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, shapes=shapes, placeholder=True)
     transfer = StyleTransfer(model)
