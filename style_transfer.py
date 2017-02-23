@@ -104,7 +104,7 @@ class TileWorker:
         self.req_q = req_q
         self.resp_q = resp_q
         self.model = None
-        self.model_info = (model.deploy, model.weights, model.mean, model.net_type, model.shapes)
+        self.model_info = (model.deploy, model.weights, model.mean, model.shapes)
         self.device = device
         self.caffe_path = caffe_path
         self.proc = CTX.Process(target=self.run)
@@ -274,14 +274,12 @@ class TileWorkerPool:
 
 class CaffeModel:
     """A Caffe neural network model."""
-    def __init__(self, deploy, weights, mean=(0, 0, 0), net_type=None, shapes=None,
-                 placeholder=False):
+    def __init__(self, deploy, weights, mean=(0, 0, 0), shapes=None, placeholder=False):
         self.deploy = deploy
         self.weights = weights
         self.mean = np.float32(mean).reshape((3, 1, 1))
         self.bgr = True
         self.shapes = shapes
-        self.net_type = net_type
         self.last_layer = None
         if shapes:
             self.last_layer = list(shapes)[-1]
@@ -914,14 +912,14 @@ def get_image_comment():
     return s
 
 
-def init_model(resp_q, net_type):
+def init_model(resp_q):
     """Puts the list of layer shapes into resp_q. To be run in a separate process."""
     setup_exceptions()
     if ARGS.caffe_path:
         sys.path.append(ARGS.caffe_path + '/python')
     import caffe
     caffe.set_mode_cpu()
-    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, net_type)
+    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean)
     shapes = OrderedDict()
     for layer in model.layers():
         shapes[layer] = model.data[layer].shape
@@ -946,10 +944,9 @@ def main():
 
     print_('Loading %s.' % ARGS.weights)
     resp_q = CTX.Queue()
-    CTX.Process(target=init_model, args=(resp_q, None)).start()
+    CTX.Process(target=init_model, args=(resp_q,)).start()
     shapes = resp_q.get()
-    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, None, shapes=shapes,
-                       placeholder=True)
+    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, shapes=shapes, placeholder=True)
     transfer = StyleTransfer(model)
     if ARGS.list_layers:
         print_('Layers:')
