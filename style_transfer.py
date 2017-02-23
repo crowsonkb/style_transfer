@@ -324,6 +324,8 @@ class CaffeModel:
 
     def layer_info(self, layer):
         """Returns the scale factor vs. the image and the number of channels."""
+        if len(self.shapes[layer]) == 1:
+            return 224, self.shapes[layer][0]
         return 224 // self.shapes[layer][1], self.shapes[layer][0]
 
     def make_layer_masks(self, mask):
