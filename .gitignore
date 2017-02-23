@@ -1,6 +1,8 @@
 __pycache__
 venv*
 inputs
+*.ipynb
+.ipynb_checkpoints
 /*.png
 *.caffemodel
 *.state

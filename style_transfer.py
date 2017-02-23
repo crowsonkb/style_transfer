@@ -34,6 +34,7 @@ from six.moves import cPickle as pickle
 from six.moves.BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from six.moves.socketserver import ThreadingMixIn
 
+from config_system import parse_args
 from num_utils import *
 from optimizer import AdamOptimizer
 
@@ -99,12 +100,13 @@ StyleData = namedtuple('StyleData', 'grams masks')
 
 class TileWorker:
     """Computes feature maps and gradients on the specified device in a separate process."""
-    def __init__(self, req_q, resp_q, model, device=-1):
+    def __init__(self, req_q, resp_q, model, device=-1, caffe_path=None):
         self.req_q = req_q
         self.resp_q = resp_q
         self.model = None
-        self.model_info = (model.deploy, model.weights, model.mean, model.net_type, model.shapes)
+        self.model_info = (model.deploy, model.weights, model.mean, model.shapes)
         self.device = device
+        self.caffe_path = caffe_path
         self.proc = CTX.Process(target=self.run)
         self.proc.daemon = True
         self.proc.start()
@@ -117,8 +119,8 @@ class TileWorker:
         """This method runs in the new process."""
         setup_exceptions()
 
-        if ARGS.caffe_path:
-            sys.path.append(ARGS.caffe_path + '/python')
+        if self.caffe_path is not None:
+            sys.path.append(self.caffe_path + '/python')
         if self.device >= 0:
             os.environ['CUDA_VISIBLE_DEVICES'] = str(self.device)
         import caffe
@@ -194,14 +196,14 @@ class TileWorkerPoolError(Exception):
 
 class TileWorkerPool:
     """A collection of TileWorkers."""
-    def __init__(self, model, devices):
+    def __init__(self, model, devices, caffe_path=None):
         self.workers = []
         self.req_count = 0
         self.next_worker = 0
         self.resp_q = CTX.Queue()
         self.is_healthy = True
         for device in devices:
-            self.workers.append(TileWorker(CTX.Queue(), self.resp_q, model, device))
+            self.workers.append(TileWorker(CTX.Queue(), self.resp_q, model, device, caffe_path))
 
     def __del__(self):
         self.is_healthy = False
@@ -272,14 +274,12 @@ class TileWorkerPool:
 
 class CaffeModel:
     """A Caffe neural network model."""
-    def __init__(self, deploy, weights, mean=(0, 0, 0), net_type=None, shapes=None,
-                 placeholder=False):
+    def __init__(self, deploy, weights, mean=(0, 0, 0), shapes=None, placeholder=False):
         self.deploy = deploy
         self.weights = weights
         self.mean = np.float32(mean).reshape((3, 1, 1))
         self.bgr = True
         self.shapes = shapes
-        self.net_type = net_type
         self.last_layer = None
         if shapes:
             self.last_layer = list(shapes)[-1]
@@ -706,7 +706,7 @@ class StyleTransfer:
         output_image = None
         output_raw = None
         print_('Starting %d worker process(es).' % len(ARGS.devices))
-        self.pool = TileWorkerPool(self.model, ARGS.devices)
+        self.pool = TileWorkerPool(self.model, ARGS.devices, ARGS.caffe_path)
 
         size = ARGS.size
         sizes = [ARGS.size]
@@ -894,122 +894,6 @@ def resize_to_fit(image, size, scale_up=False):
     return image.resize((new_w, new_h), Image.LANCZOS)
 
 
-def ffloat(s):
-    """Parses fractional or floating point input strings."""
-    return float(Fraction(s))
-
-
-def parse_args():
-    """Parses command line arguments. Alternate default arguments are read from style_transfer.ini
-    (an alternate config can be specified by --config). The .ini file should begin with the
-    line [DEFAULT] and contain keys corresponding to the long option names."""
-    config_file = 'style_transfer.ini'
-
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('content_image', nargs='?', default=None, help='the content image')
-    parser.add_argument('style_images', nargs='?', default=None, help='the style images')
-    parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
-    parser.add_argument('--config', default=config_file,
-                        help='an ini file containing values for command line arguments')
-    parser.add_argument('--list-layers', action='store_true', help='list the model\'s layers')
-    parser.add_argument('--caffe-path', help='the path to the Caffe installation')
-    parser.add_argument('--init-image', metavar='IMAGE', help='the initial image')
-    parser.add_argument('--aux-image', metavar='IMAGE', help='the auxiliary image')
-    parser.add_argument('--style-masks', nargs='+', metavar='MASK', default=[],
-                        help='the masks for each style image')
-    parser.add_argument('--state', help='a .state file (the initial state)')
-    parser.add_argument(
-        '--iterations', '-i', nargs='+', type=int, default=[200, 100],
-        help='the number of iterations')
-    parser.add_argument(
-        '--size', '-s', type=int, default=256, help='the output size')
-    parser.add_argument(
-        '--min-size', type=int, default=182, help='the minimum scale\'s size')
-    parser.add_argument(
-        '--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor')
-    parser.add_argument(
-        '--style-scale-up', default=False, action='store_true',
-        help='allow scaling style image up')
-    parser.add_argument(
-        '--step-size', '-st', type=ffloat, default=15,
-        help='the initial step size for Adam')
-    parser.add_argument(
-        '--step-decay', '-sd', nargs=2, metavar=('GAMMA', 'POWER'), type=ffloat,
-        default=[0.05, 0.5], help='on step i, divide step_size by (1 + GAMMA * i)^POWER')
-    parser.add_argument(
-        '--avg-window', type=ffloat, default=20, help='the iterate averaging window size')
-    parser.add_argument(
-        '--layer-weights', help='a json file containing per-layer weight scaling factors')
-    parser.add_argument(
-        '--content-weight', '-cw', type=ffloat, default=0.05, help='the content image factor')
-    parser.add_argument(
-        '--dd-weight', '-dw', type=ffloat, default=0, help='the Deep Dream factor')
-    parser.add_argument(
-        '--tv-weight', '-tw', type=ffloat, default=1, help='the smoothing factor')
-    parser.add_argument(
-        '--tv-power', '-tp', metavar='BETA', type=ffloat, default=2, help='the smoothing exponent')
-    parser.add_argument(
-        '--p-weight', '-pw', type=ffloat, default=0.05, help='the p-norm regularizer factor')
-    parser.add_argument(
-        '--p-power', '-pp', metavar='P', type=ffloat, default=6, help='the p-norm exponent')
-    parser.add_argument(
-        '--aux-weight', '-aw', type=ffloat, default=1, help='the auxiliary image factor')
-    parser.add_argument(
-        '--content-layers', nargs='*', default=['conv4_2'],
-        metavar='LAYER', help='the layers to use for content')
-    parser.add_argument(
-        '--style-layers', nargs='*', metavar='LAYER',
-        default=['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1'],
-        help='the layers to use for style')
-    parser.add_argument(
-        '--dd-layers', nargs='*', metavar='LAYER', default=[],
-        help='the layers to use for Deep Dream')
-    parser.add_argument(
-        '--port', '-p', type=int, default=8000,
-        help='the port to use for the http server')
-    parser.add_argument(
-        '--no-browser', action='store_true', help='don\'t open a web browser')
-    parser.add_argument(
-        '--hidpi', action='store_true', help='display the image at 2x scale in the browser')
-    parser.add_argument(
-        '--model', default='vgg19.prototxt',
-        help='the Caffe deploy.prototxt for the model to use')
-    parser.add_argument(
-        '--weights', default='vgg19.caffemodel',
-        help='the Caffe .caffemodel for the model to use')
-    parser.add_argument(
-        '--mean', nargs=3, metavar=('B_MEAN', 'G_MEAN', 'R_MEAN'),
-        default=(103.939, 116.779, 123.68),
-        help='the per-channel means of the model (BGR order)')
-    parser.add_argument(
-        '--save-every', metavar='N', type=int, default=0, help='save the image every n steps')
-    parser.add_argument(
-        '--devices', nargs='+', metavar='DEVICE', type=int, default=[0],
-        help='device numbers to use (-1 for cpu)')
-    parser.add_argument(
-        '--tile-size', type=int, default=512, help='the maximum rendering tile size')
-    parser.add_argument(
-        '--seed', type=int, default=0, help='the random seed')
-
-    global ARGS  # pylint: disable=global-statement
-    args_from_cli = parser.parse_args()
-    config = configparser.ConfigParser()
-    if os.path.exists(args_from_cli.config) or args_from_cli.config != config_file:
-        config.read_file(open(args_from_cli.config))
-    config_args = [None, None]
-    for k, v in config['DEFAULT'].items():
-        config_args.append('--' + k.replace('_', '-'))
-        if v:
-            config_args.extend(shlex.split(v))
-    config_parsed = parser.parse_args(args=config_args)
-    new_defaults = {arg: getattr(config_parsed, arg) for arg in config['DEFAULT']}
-    ARGS = parser.parse_args(namespace=argparse.Namespace(**new_defaults))
-    if not ARGS.list_layers and (ARGS.content_image is None or ARGS.style_images is None):
-        parser.print_help()
-        sys.exit(1)
-
-
 def print_args():
     """Prints out all command-line parameters."""
     print_('Parameters:')
@@ -1028,14 +912,14 @@ def get_image_comment():
     return s
 
 
-def init_model(resp_q, net_type):
+def init_model(resp_q):
     """Puts the list of layer shapes into resp_q. To be run in a separate process."""
     setup_exceptions()
     if ARGS.caffe_path:
         sys.path.append(ARGS.caffe_path + '/python')
     import caffe
     caffe.set_mode_cpu()
-    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, net_type)
+    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean)
     shapes = OrderedDict()
     for layer in model.layers():
         shapes[layer] = model.data[layer].shape
@@ -1044,9 +928,11 @@ def init_model(resp_q, net_type):
 
 def main():
     """CLI interface for style transfer."""
+    global ARGS
+
     start_time = timer()
     setup_exceptions()
-    parse_args()
+    ARGS = parse_args()
     print_args()
 
     if MKL_THREADS is not None:
@@ -1058,10 +944,9 @@ def main():
 
     print_('Loading %s.' % ARGS.weights)
     resp_q = CTX.Queue()
-    CTX.Process(target=init_model, args=(resp_q, None)).start()
+    CTX.Process(target=init_model, args=(resp_q,)).start()
     shapes = resp_q.get()
-    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, None, shapes=shapes,
-                       placeholder=True)
+    model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, shapes=shapes, placeholder=True)
     transfer = StyleTransfer(model)
     if ARGS.list_layers:
         print_('Layers:')
@@ -1071,7 +956,7 @@ def main():
 
     content_image = Image.open(ARGS.content_image).convert('RGB')
     style_images, style_masks = [], []
-    for image in ARGS.style_images.split(','):
+    for image in ARGS.style_images:
         style_images.append(Image.open(image).convert('RGB'))
     initial_image, aux_image = None, None
     if ARGS.init_image:
