@@ -10,7 +10,6 @@ from __future__ import division
 import argparse
 import configparser
 from collections import namedtuple, OrderedDict
-from concurrent.futures import ThreadPoolExecutor
 from fractions import Fraction
 from functools import partial
 import io
@@ -27,14 +26,17 @@ import webbrowser
 
 import numpy as np
 from PIL import Image, PngImagePlugin
-import posix_ipc
-from scipy.linalg import blas
-from scipy.ndimage import convolve, zoom
+from scipy.ndimage import convolve
+from shared_ndarray import SharedNDArray
 import six
 from six import print_
 from six.moves import cPickle as pickle
 from six.moves.BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from six.moves.socketserver import ThreadingMixIn
+
+from num_utils import *
+from optimizer import AdamOptimizer
+
 
 ARGS = None
 
@@ -44,9 +46,6 @@ if six.PY2:
 else:
     CTX = mp.get_context('fork')
     timer = time.perf_counter
-
-# Machine epsilon for float32
-EPS = np.finfo(np.float32).eps
 
 # Maximum number of MKL threads between all processes
 MKL_THREADS = None
@@ -73,151 +72,6 @@ except ImportError:
     pass
 
 
-# pylint: disable=no-member
-def dot(x, y):
-    """Returns the dot product of two float32 arrays with the same shape."""
-    return blas.sdot(x.ravel(), y.ravel())
-
-
-# pylint: disable=no-member
-def axpy(a, x, y):
-    """Sets y = a*x + y for float a and float32 arrays x, y and returns y."""
-    y_ = blas.saxpy(x.ravel(), y.ravel(), a=a).reshape(y.shape)
-    if y is not y_:
-        y[:] = y_
-    return y
-
-
-def norm2(arr):
-    """Returns 1/2 the L2 norm squared."""
-    return dot(arr, arr) / 2
-
-
-def normalize(arr):
-    """Normalizes an array in-place to have an L1 norm equal to its size."""
-    arr /= np.mean(abs(arr)) + EPS
-    return arr
-
-
-def resize(a, hw, method=Image.LANCZOS):
-    """Resamples an image array in CxHxW format to a new HxW size. The interpolation is performed
-    in floating point and the result dtype is numpy.float32."""
-    def _resize(a, b):
-        b[:] = Image.fromarray(a).resize((hw[1], hw[0]), method)
-
-    a = np.float32(a)
-    if a.ndim == 2:
-        b = np.zeros(hw, np.float32)
-        _resize(a, b)
-        return b
-    ch = a.shape[0]
-    b = np.zeros((ch, hw[0], hw[1]), np.float32)
-
-    with ThreadPoolExecutor(max_workers=os.cpu_count()) as ex:
-        futs = [ex.submit(_resize, a[i], b[i]) for i in range(ch)]
-        _ = [fut.result() for fut in futs]
-
-    return b
-
-
-def roll_by_1(arr, shift, axis):
-    """Rolls a 3D array in-place by a shift of one element. Axes 1 and 2 only."""
-    if axis == 1:
-        if shift == -1:
-            line = arr[:, 0, :].copy()
-            arr[:, :-1, :] = arr[:, 1:, :]
-            arr[:, -1, :] = line
-        elif shift == 1:
-            line = arr[:, -1, :].copy()
-            arr[:, 1:, :] = arr[:, :-1, :]
-            arr[:, 0, :] = line
-    elif axis == 2:
-        if shift == -1:
-            line = arr[:, :, 0].copy()
-            arr[:, :, :-1] = arr[:, :, 1:]
-            arr[:, :, -1] = line
-        elif shift == 1:
-            line = arr[:, :, -1].copy()
-            arr[:, :, 1:] = arr[:, :, :-1]
-            arr[:, :, 0] = line
-    else:
-        raise ValueError('Unsupported shift or axis')
-    return arr
-
-
-def roll2(arr, xy):
-    """Translates an array by the shift xy, wrapping at the edges."""
-    if (xy == 0).all():
-        return arr
-    # return np.roll(arr, xy, (2, 1))
-    return np.roll(np.roll(arr, xy[0], -1), xy[1], -2)
-
-
-def gram_matrix(feat):
-    """Computes the Gram matrix corresponding to a feature map."""
-    n, mh, mw = feat.shape
-    feat = feat.reshape((n, mh * mw))
-    return blas.ssyrk(1 / feat.size, feat)
-
-
-def tv_norm(x, beta=2):
-    """Computes the total variation norm and its gradient. From jcjohnson/cnn-vis and [3]."""
-    x_diff = x - roll_by_1(x.copy(), -1, axis=2)
-    y_diff = x - roll_by_1(x.copy(), -1, axis=1)
-    grad_norm2 = x_diff**2 + y_diff**2 + EPS
-    loss = np.sum(grad_norm2**(beta/2))
-    dgrad_norm = (beta/2) * grad_norm2**(beta/2 - 1)
-    dx_diff = 2 * x_diff * dgrad_norm
-    dy_diff = 2 * y_diff * dgrad_norm
-    grad = dx_diff + dy_diff
-    grad -= roll_by_1(dx_diff, 1, axis=2)
-    grad -= roll_by_1(dy_diff, 1, axis=1)
-    return loss, grad
-
-
-# pylint: disable=no-member
-class SharedNDArray:
-    """Creates an ndarray shared between processes using POSIX shared memory. It can be used to
-    transmit ndarrays between processes quickly. It can be sent over multiprocessing.Pipe and
-    Queue."""
-    def __init__(self, shape, dtype=np.float64, name=None):
-        size = int(np.prod(shape)) * np.dtype(dtype).itemsize
-        if name:
-            self._shm = posix_ipc.SharedMemory(name)
-        else:
-            self._shm = posix_ipc.SharedMemory(None, posix_ipc.O_CREX, size=size)
-        self._buf = mmap.mmap(self._shm.fd, size)
-        self.array = np.ndarray(shape, dtype, self._buf)
-
-    @classmethod
-    def copy(cls, arr):
-        """Creates a new SharedNDArray that is a copy of the given ndarray."""
-        new_shm = cls.zeros_like(arr)
-        new_shm.array[:] = arr
-        return new_shm
-
-    @classmethod
-    def zeros_like(cls, arr):
-        """Creates a new zero-filled SharedNDArray with the shape and dtype of the given
-        ndarray."""
-        return cls(arr.shape, arr.dtype)
-
-    def unlink(self):
-        """Marks the ndarray for deletion. This method should be called once and only once, from
-        one process."""
-        self._shm.unlink()
-
-    def __del__(self):
-        self._buf.close()
-        self._shm.close_fd()
-
-    def __getstate__(self):
-        return self.array.shape, self.array.dtype, self._shm.name
-
-    def __setstate__(self, state):
-        self.__init__(*state)
-
-
 class LayerIndexer:
     """Helper class for accessing feature maps and gradients."""
     def __init__(self, net, attr):
@@ -228,77 +82,6 @@ class LayerIndexer:
 
     def __setitem__(self, key, value):
         getattr(self.net.blobs[key], self.attr)[0] = value
-
-
-class AdamOptimizer:
-    """Implements the Adam gradient descent optimizer [4] with iterate averaging."""
-    def __init__(self, params, step_size=1, b1=0.9, b2=0.999, bp1=0, decay=1, decay_power=0):
-        """Initializes the optimizer."""
-        self.params = params
-        self.step_size = step_size
-        self.b1, self.b2, self.bp1 = b1, b2, bp1
-        self.decay, self.decay_power = decay, decay_power
-
-        self.i = 0
-        self.step = 0
-        self.xy = np.zeros(2, dtype=np.int32)
-        self.g1 = np.zeros_like(params)
-        self.g2 = np.zeros_like(params)
-        self.p1 = np.zeros_like(params)
-
-    def update(self, opfunc):
-        """Returns a step's parameter update given a loss/gradient evaluation function."""
-        # Step size decay
-        step_size = self.step_size / (1 + self.decay * self.i)**self.decay_power
-
-        self.i += 1
-        self.step += 1
-        loss, grad = opfunc(self.params)
-
-        # Adam
-        self.g1 *= self.b1
-        axpy(1 - self.b1, grad, self.g1)
-        self.g2 *= self.b2
-        axpy(1 - self.b2, grad**2, self.g2)
-        step_size *= np.sqrt(1-self.b2**self.step)
-        step = self.g1 / (np.sqrt(self.g2) + EPS)
-        axpy(-step_size, step, self.params)
-
-        # Iterate averaging
-        self.p1 *= self.bp1
-        axpy(1 - self.bp1, self.params, self.p1)
-        return roll2(self.p1, -self.xy) / (1-self.bp1**self.step), loss
-
-    def roll(self, xy):
-        """Rolls the optimizer's internal state."""
-        if (xy == 0).all():
-            return
-        self.xy += xy
-        self.g1[:] = roll2(self.g1, xy)
-        self.g2[:] = roll2(self.g2, xy)
-        self.p1[:] = roll2(self.p1, xy)
-
-    def set_params(self, last_iterate):
-        """Sets params to the supplied array (a possibly-resized or altered last non-averaged
-        iterate), resampling the optimizer's internal state if the shape has changed."""
-        self.i = 0
-        self.params = last_iterate
-        hw = self.params.shape[-2:]
-        self.g1 = resize(self.g1, hw)
-        self.g2 = np.maximum(0, resize(self.g2, hw, method=Image.BILINEAR))
-        self.p1 = resize(self.p1, hw)
-
-    def restore_state(self, optimizer):
-        """Given an AdamOptimizer instance, restores internal state from it."""
-        assert isinstance(optimizer, AdamOptimizer)
-        self.params = optimizer.params
-        self.g1 = optimizer.g1
-        self.g2 = optimizer.g2
-        self.p1 = optimizer.p1
-        self.i = optimizer.i
-        self.step = optimizer.step
-        self.xy = optimizer.xy.copy()
-        self.roll(-self.xy)
 
 
 FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
