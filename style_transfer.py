@@ -841,7 +841,7 @@ class ProgressHandler(BaseHTTPRequestHandler):
         background-color: rgb(55, 55, 55);
         color: rgb(255, 255, 255);
     }
-    #out {image-rendering: -webkit-optimize-contrast;}</style>
+    </style>
     <h1>Style transfer</h1>
     <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
     <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss).1f,
