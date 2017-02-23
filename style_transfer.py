@@ -34,7 +34,7 @@ from six.moves import cPickle as pickle
 from six.moves.BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from six.moves.socketserver import ThreadingMixIn
 
-from config_system import parse_args
+from config_system import ffloat, parse_args
 from num_utils import *
 from optimizers import AdamOptimizer, LBFGSOptimizer
 
