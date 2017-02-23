@@ -902,20 +902,22 @@ def ffloat(s):
 def parse_args():
     """Parses command line arguments. Alternate default arguments are read from style_transfer.ini
     (an alternate config can be specified by --config). The .ini file should begin with the
-    line [DEFAULT] and contain keys corresponding to the long option names."""
+    line [DEFAULT] and contain keys corresponding to the long option names.
+    """
     config_file = 'style_transfer.ini'
 
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('content_image', nargs='?', default=None, help='the content image')
-    parser.add_argument('style_images', nargs='?', default=None, help='the style images')
-    parser.add_argument('output_image', nargs='?', default='out.png', help='the output image')
+    parser.add_argument('--content-image', '-ci', help='the content image')
+    parser.add_argument('--style-images', '-si', nargs='+', default=[],
+                        metavar='STYLE_IMAGE', help='the style images')
+    parser.add_argument('--output_image', '-oi', default='out.png', help='the output image')
     parser.add_argument('--config', default=config_file,
                         help='an ini file containing values for command line arguments')
     parser.add_argument('--list-layers', action='store_true', help='list the model\'s layers')
     parser.add_argument('--caffe-path', help='the path to the Caffe installation')
-    parser.add_argument('--init-image', metavar='IMAGE', help='the initial image')
-    parser.add_argument('--aux-image', metavar='IMAGE', help='the auxiliary image')
+    parser.add_argument('--init-image', '-ii', metavar='IMAGE', help='the initial image')
+    parser.add_argument('--aux-image', '-ai', metavar='IMAGE', help='the auxiliary image')
     parser.add_argument('--style-masks', nargs='+', metavar='MASK', default=[],
                         help='the masks for each style image')
     parser.add_argument('--state', help='a .state file (the initial state)')
@@ -997,7 +999,7 @@ def parse_args():
     config = configparser.ConfigParser()
     if os.path.exists(args_from_cli.config) or args_from_cli.config != config_file:
         config.read_file(open(args_from_cli.config))
-    config_args = [None, None]
+    config_args = []
     for k, v in config['DEFAULT'].items():
         config_args.append('--' + k.replace('_', '-'))
         if v:
@@ -1071,7 +1073,7 @@ def main():
 
     content_image = Image.open(ARGS.content_image).convert('RGB')
     style_images, style_masks = [], []
-    for image in ARGS.style_images.split(','):
+    for image in ARGS.style_images:
         style_images.append(Image.open(image).convert('RGB'))
     initial_image, aux_image = None, None
     if ARGS.init_image:
