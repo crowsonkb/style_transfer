@@ -28,7 +28,6 @@ def parse_args(state_obj=None):
     parser.add_argument('--aux-image', '-ai', metavar='IMAGE', help='the auxiliary image')
     parser.add_argument('--style-masks', nargs='+', metavar='MASK', default=[],
                         help='the masks for each style image')
-    parser.add_argument('--state', help='a .state file (a saved initial state)')
     parser.add_argument('--config', default=CONFIG_PY, type=Path,
                         help='a Python source file containing configuration options')
     parser.add_argument('--list-layers', action='store_true', help='list the model\'s layers')

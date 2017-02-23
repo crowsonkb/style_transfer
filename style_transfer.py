@@ -699,8 +699,7 @@ class StyleTransfer:
         return self.current_output
 
     def transfer_multiscale(self, content_images, style_images, initial_image, aux_image,
-                            content_masks, style_masks, initial_state=None, callback=None,
-                            **kwargs):
+                            content_masks, style_masks, callback=None, **kwargs):
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
         output_raw = None
@@ -765,15 +764,6 @@ class StyleTransfer:
                     self.model.img, step_size=ARGS.step_size, bp1=1-(1/ARGS.avg_window),
                     decay=ARGS.step_decay[0], decay_power=ARGS.step_decay[1], biased_g1=biased_g1)
 
-                if initial_state:
-                    self.optimizer.restore_state(initial_state)
-                    if self.model.img.shape != self.optimizer.params.shape:
-                        initial_image = self.model.get_image(self.optimizer.params)
-                        initial_image = initial_image.resize(content_scaled[0].size, Image.LANCZOS)
-                        self.model.set_image(initial_image)
-                        self.optimizer.set_params(self.model.img)
-                    self.model.img = self.optimizer.params
-
             params = self.model.img
             iters_i = ARGS.iterations[min(i, len(ARGS.iterations)-1)]
             output_image = self.transfer(iters_i, params, content_scaled, style_scaled,
@@ -782,11 +772,6 @@ class StyleTransfer:
             output_raw = self.current_raw
 
         return output_image
-
-    def save_state(self, filename='out.state'):
-        """Saves the optimizer's internal state to disk."""
-        with open(filename, 'wb') as f:
-            pickle.dump(self.optimizer, f, pickle.HIGHEST_PROTOCOL)
 
 
 class Progress:
@@ -982,15 +967,11 @@ def main():
     th.start()
     print_('\nWatch the progress at: %s\n' % url)
 
-    state = None
-    if ARGS.state:
-        state = pickle.load(open(ARGS.state, 'rb'))
-
     np.random.seed(ARGS.seed)
     try:
         transfer.transfer_multiscale(
             [content_image], style_images, initial_image, aux_image, [], style_masks,
-            callback=server.progress, initial_state=state)
+            callback=server.progress)
     except KeyboardInterrupt:
         print_()
 
@@ -1000,8 +981,6 @@ def main():
         png_info.add_itxt('Comment', get_image_comment())
         transfer.current_output.save(ARGS.output_image, pnginfo=png_info)
         a, _, _ = ARGS.output_image.rpartition('.')
-        print_('Saving state as %s.' % (a + '.state'))
-        transfer.save_state(a + '.state')
     time_spent = timer() - start_time
     print_('Exiting after %dm %.2fs.' % (time_spent // 60, time_spent % 60))
 

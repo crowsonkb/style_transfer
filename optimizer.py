@@ -66,15 +66,3 @@ class AdamOptimizer:
         self.g1 = resize(self.g1, hw)
         self.g2 = np.maximum(0, resize(self.g2, hw, method=BILINEAR))
         self.p1 = resize(self.p1, hw)
-
-    def restore_state(self, optimizer):
-        """Given an AdamOptimizer instance, restores internal state from it."""
-        assert isinstance(optimizer, AdamOptimizer)
-        self.params = optimizer.params
-        self.g1 = optimizer.g1
-        self.g2 = optimizer.g2
-        self.p1 = optimizer.p1
-        self.i = optimizer.i
-        self.step = optimizer.step
-        self.xy = optimizer.xy.copy()
-        self.roll(-self.xy)
