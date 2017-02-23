@@ -106,7 +106,3 @@ pip3 install -Ur requirements.txt
 [4] D. Kingma, J. Ba, "[Adam: A Method for Stochastic Optimization](https://arxiv.org/abs/1412.6980)"
 
 [5] K. Simonyan, A. Zisserman, "[Very Deep Convolutional Networks for Large-Scale Image Recognition](https://arxiv.org/abs/1409.1556)"
-
-[6] D. Liu, J. Nocedal, "[On the limited memory BFGS method for large scale optimization](http://users.iems.northwestern.edu/~nocedal/PDFfiles/limited-memory.pdf)"
-
-[7] A. Skajaa, "[Limited Memory BFGS for Nonsmooth Optimization](http://cs.nyu.edu/overton/mstheses/skajaa/msthesis.pdf)"
