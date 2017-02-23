@@ -65,11 +65,11 @@ def parse_args(state_obj=None):
     parser.add_argument(
         '--dd-weight', '-dw', type=ffloat, default=0, help='the Deep Dream factor')
     parser.add_argument(
-        '--tv-weight', '-tw', type=ffloat, default=1, help='the smoothing factor')
+        '--tv-weight', '-tw', type=ffloat, default=5, help='the smoothing factor')
     parser.add_argument(
         '--tv-power', '-tp', metavar='BETA', type=ffloat, default=2, help='the smoothing exponent')
     parser.add_argument(
-        '--p-weight', '-pw', type=ffloat, default=0.05, help='the p-norm regularizer factor')
+        '--p-weight', '-pw', type=ffloat, default=2, help='the p-norm regularizer factor')
     parser.add_argument(
         '--p-power', '-pp', metavar='P', type=ffloat, default=6, help='the p-norm exponent')
     parser.add_argument(

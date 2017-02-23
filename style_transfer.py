@@ -602,10 +602,9 @@ class StyleTransfer:
 
         # Compute style+content gradient
         loss, grad = self.model.eval_sc_grad(*sc_grad_args)
-        normalize(grad)
 
         # Compute total variation gradient
-        tv_loss, tv_grad = tv_norm(self.model.img / 255, beta=ARGS.tv_power)
+        tv_loss, tv_grad = tv_norm(self.model.img / 127.5, beta=ARGS.tv_power)
         loss += lw * ARGS.tv_weight * tv_loss
 
         # Selectively blur edges more to obscure jitter and tile seams
