@@ -49,6 +49,8 @@ def parse_args(state_obj=None):
         help='allow scaling style images up')
     parser.add_argument(
         '--tile-size', type=int, default=512, help='the maximum rendering tile size')
+    parser.add_argument('--optimizer', '-o', default='adam', choices=['adam', 'lbfgs'],
+                        help='the optimizer to use')
     parser.add_argument(
         '--step-size', '-st', type=ffloat, default=15,
         help='the initial step size for Adam')
