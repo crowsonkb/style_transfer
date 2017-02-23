@@ -1,1 +1,1 @@
-"""Configuration file for style_transfer."""
+# Configuration file for style_transfer.
