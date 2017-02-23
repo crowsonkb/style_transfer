@@ -7,12 +7,14 @@ from num_utils import axpy, BILINEAR, EPS, resize, roll2
 
 class AdamOptimizer:
     """Implements the Adam gradient descent optimizer [4] with iterate averaging."""
-    def __init__(self, params, step_size=1, b1=0.9, b2=0.999, bp1=0, decay=1, decay_power=0):
+    def __init__(self, params, step_size=1, b1=0.9, b2=0.999, bp1=0, decay=1, decay_power=0,
+                 biased_g1=False):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
         self.b1, self.b2, self.bp1 = b1, b2, bp1
         self.decay, self.decay_power = decay, decay_power
+        self.biased_g1 = biased_g1
 
         self.i = 0
         self.step = 0
@@ -35,14 +37,16 @@ class AdamOptimizer:
         axpy(1 - self.b1, grad, self.g1)
         self.g2 *= self.b2
         axpy(1 - self.b2, grad**2, self.g2)
-        step_size *= np.sqrt(1-self.b2**self.step)
+        step_size *= np.sqrt(1 - self.b2**self.step)
+        if not self.biased_g1:
+            step_size /= 1 - self.b1**self.step
         step = self.g1 / (np.sqrt(self.g2) + EPS)
         axpy(-step_size, step, self.params)
 
         # Iterate averaging
         self.p1 *= self.bp1
         axpy(1 - self.bp1, self.params, self.p1)
-        return roll2(self.p1, -self.xy) / (1-self.bp1**self.step), loss
+        return roll2(self.p1, -self.xy) / (1 - self.bp1**self.step), loss
 
     def roll(self, xy):
         """Rolls the optimizer's internal state."""

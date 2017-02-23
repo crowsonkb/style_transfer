@@ -752,18 +752,19 @@ class StyleTransfer:
                 params = self.model.img
                 self.optimizer.set_params(params)
             else:  # this is the first scale
+                biased_g1 = True
                 if initial_image:  # and the user supplied an initial image
                     initial_image = initial_image.resize(content_scaled[0].size, Image.LANCZOS)
                     self.model.set_image(initial_image)
                 else:  # and the user did not supply an initial image
                     w, h = content_scaled[0].size
                     self.model.set_image(np.random.uniform(0, 255, size=(h, w, 3)))
-
+                    biased_g1 = False
                 # make sure the optimizer's params array shares memory with self.model.img
                 # after preprocess_image is called later
                 self.optimizer = AdamOptimizer(
                     self.model.img, step_size=ARGS.step_size, bp1=1-(1/ARGS.avg_window),
-                    decay=ARGS.step_decay[0], decay_power=ARGS.step_decay[1])
+                    decay=ARGS.step_decay[0], decay_power=ARGS.step_decay[1], biased_g1=biased_g1)
 
                 if initial_state:
                     self.optimizer.restore_state(initial_state)
