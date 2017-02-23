@@ -82,7 +82,7 @@ def axpy(a, x, y):
 
 def norm2(arr):
     """Returns 1/2 the L2 norm squared."""
-    return dot(arr, arr) / 2
+    return np.sum(arr**2) / 2
 
 
 def normalize(arr):
@@ -150,6 +150,43 @@ def gram_matrix(feat):
     n, mh, mw = feat.shape
     feat = feat.reshape((n, mh * mw))
     return blas.ssyrk(1 / feat.size, feat)
+
+
+def hist_match(src, dst, out, bins):
+    """Adjusts the histogram of the single-channel image src to match that of dst.
+
+    From http://stackoverflow.com/questions/32655686/histogram-matching-of-two-images-in-python-2-x.
+    """
+    shape = src.shape
+    src, dst = src.ravel(), dst.ravel()
+    min_value = min(np.min(src), np.min(dst))
+    max_value = max(np.max(src), np.max(dst))
+    range_ = max_value - min_value
+    if range_ == 0:
+        return np.zeros(shape, np.float32)
+    src = np.int32((src - min_value) * bins / range_)
+    dst = np.int32((dst - min_value) * bins / range_)
+
+    s_values, bin_idx, s_counts = np.unique(src, return_inverse=True, return_counts=True)
+    d_values, d_counts = np.unique(dst, return_counts=True)
+
+    s_quantiles = np.cumsum(s_counts).astype(np.float32)
+    s_quantiles /= s_quantiles[-1]
+    d_quantiles = np.cumsum(d_counts).astype(np.float32)
+    d_quantiles /= d_quantiles[-1]
+
+    interp_d_values = np.interp(s_quantiles, d_quantiles, d_values)
+    out[:] = interp_d_values[bin_idx].reshape(shape) / bins * range_ + min_value
+
+
+def hist_norm(src, dst, bins=256):
+    """Computes the histogram norm between feature maps src and dst and its gradient. From
+    https://arxiv.org/abs/1701.08893."""
+    out = np.zeros(src.shape, np.float32)
+    for i in range(out.shape[0]):
+        hist_match(src[i], dst[i], out[i], bins)
+    grad = src - out
+    return norm2(grad), grad
 
 
 def tv_norm(x, beta=2):
@@ -303,7 +340,7 @@ SetContentsAndStyles = namedtuple('SetContentsAndStyles', 'contents styles')
 SetThreadCount = namedtuple('SetThreadCount', 'threads')
 
 ContentData = namedtuple('ContentData', 'features masks')
-StyleData = namedtuple('StyleData', 'grams masks')
+StyleData = namedtuple('StyleData', 'features grams masks')
 
 
 class TileWorker:
@@ -380,11 +417,13 @@ class TileWorker:
                     {layer: content.masks[layer].array.copy() for layer in content.masks}
                 self.model.contents.append(ContentData(features, masks))
             for style in req.styles:
+                features = \
+                    {layer: style.grams[layer].array.copy() for layer in style.features}
                 grams = \
                     {layer: style.grams[layer].array.copy() for layer in style.grams}
                 masks = \
                     {layer: style.masks[layer].array.copy() for layer in style.masks}
-                self.model.styles.append(StyleData(grams, masks))
+                self.model.styles.append(StyleData(features, grams, masks))
             self.resp_q.put(())
 
         if isinstance(req, SetThreadCount):
@@ -450,11 +489,13 @@ class TileWorkerPool:
                 content_shms.append(ContentData(features_shm, masks_shm))
 
             for style in styles:
+                features_shm = {layer: SharedNDArray.copy(style.features[layer])
+                                for layer in style.features}
                 grams_shm = {layer: SharedNDArray.copy(style.grams[layer])
                              for layer in style.grams}
                 masks_shm = {layer: SharedNDArray.copy(style.masks[layer])
                              for layer in style.masks}
-                style_shms.append(StyleData(grams_shm, masks_shm))
+                style_shms.append(StyleData(features_shm, grams_shm, masks_shm))
 
             worker.req_q.put(SetContentsAndStyles(content_shms, style_shms))
 
@@ -644,7 +685,7 @@ class CaffeModel:
             for layer in feats:
                 axpy(1 / len(style_images), gram_matrix(feats[layer]), grams[layer])
             masks = self.make_layer_masks(mask)
-            self.styles.append(StyleData(grams, masks))
+            self.styles.append(StyleData(feats, grams, masks))
 
         # Prepare feature maps from content image
         for image, mask in zip(content_images, content_masks):
@@ -662,6 +703,7 @@ class CaffeModel:
         self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
         self.data['data'] = img
         loss = 0
+        hw = 0.1
 
         # Prepare gradient buffers and run the model forward
         for layer in layers:
@@ -684,17 +726,25 @@ class CaffeModel:
 
             def eval_s_grad(layer, style):
                 nonlocal loss
+                mask = style.masks[layer][start_[0]:end[0], start_[1]:end[1]]
+
+                if hw:
+                    h_loss, h_grad = hist_norm(self.data[layer], style.features[layer])
+                    loss += lw * style_weight[layer] * hw * np.mean(mask) * h_loss
+                    axpy(lw * style_weight[layer] * hw, normalize(h_grad), self.diff[layer])
+
                 current_gram = gram_matrix(self.data[layer])
                 n, mh, mw = self.data[layer].shape
                 feat = self.data[layer].reshape((n, mh * mw))
                 s_grad = blas.ssymm(1, current_gram - style.grams[layer], feat)
                 s_grad = s_grad.reshape((n, mh, mw))
-                s_grad *= style.masks[layer][start_[0]:end[0], start_[1]:end[1]]
+                s_grad *= mask
                 loss += lw * style_weight[layer] * norm2(current_gram - style.grams[layer]) * \
-                    np.mean(style.masks[layer][start_[0]:end[0], start_[1]:end[1]]) / 2
+                    np.mean(mask) / 2
                 axpy(lw * style_weight[layer], normalize(s_grad), self.diff[layer])
 
             # Compute the content and style gradients
+            self.data[layer][self.data[layer] < 0] = 0
             if layer in content_layers:
                 for content in self.contents:
                     eval_c_grad(layer, content)
