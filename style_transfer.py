@@ -936,8 +936,7 @@ def parse_args():
         help='the initial step size for Adam')
     parser.add_argument(
         '--step-decay', '-sd', nargs=2, metavar=('GAMMA', 'POWER'), type=ffloat,
-        default=[0.05, 0.5], help='on step i, divide step_size by (1 + GAMMA * i)^POWER'
-    )
+        default=[0.05, 0.5], help='on step i, divide step_size by (1 + GAMMA * i)^POWER')
     parser.add_argument(
         '--avg-window', type=ffloat, default=20, help='the iterate averaging window size')
     parser.add_argument(
