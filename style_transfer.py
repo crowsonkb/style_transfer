@@ -52,6 +52,14 @@ EPS = np.finfo(np.float32).eps
 MKL_THREADS = None
 
 
+def setup_exceptions():
+    try:
+        from IPython.core.ultratb import AutoFormattedTB
+        sys.excepthook = AutoFormattedTB(mode='Verbose', color_scheme='Neutral')
+    except ImportError:
+        pass
+
+
 def set_thread_count(threads):
     """Sets the maximum number of MKL threads for this process."""
     if MKL_THREADS is not None:
@@ -324,6 +332,8 @@ class TileWorker:
 
     def run(self):
         """This method runs in the new process."""
+        setup_exceptions()
+
         if ARGS.caffe_path:
             sys.path.append(ARGS.caffe_path + '/python')
         if self.device >= 0:
@@ -341,7 +351,10 @@ class TileWorker:
         self.model.img = np.zeros((3, 1, 1), dtype=np.float32)
 
         while True:
-            self.process_one_request()
+            try:
+                self.process_one_request()
+            except KeyboardInterrupt:
+                break
 
     def process_one_request(self):
         """Receives one request from the master process and acts on it."""
@@ -1235,6 +1248,7 @@ def get_image_comment():
 
 def init_model(resp_q, net_type):
     """Puts the list of layer shapes into resp_q. To be run in a separate process."""
+    setup_exceptions()
     if ARGS.caffe_path:
         sys.path.append(ARGS.caffe_path + '/python')
     import caffe
@@ -1249,6 +1263,7 @@ def init_model(resp_q, net_type):
 def main():
     """CLI interface for style transfer."""
     start_time = timer()
+    setup_exceptions()
     parse_args()
     print_args()
 
