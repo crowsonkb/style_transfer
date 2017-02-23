@@ -7,18 +7,12 @@
 
 from __future__ import division
 
-import argparse
-import configparser
 from collections import namedtuple, OrderedDict
-from fractions import Fraction
 from functools import partial
 import io
 import json
-import mmap
 import multiprocessing as mp
 import os
-import pickle
-import shlex
 import sys
 import threading
 import time
@@ -30,7 +24,6 @@ from scipy.ndimage import convolve
 from shared_ndarray import SharedNDArray
 import six
 from six import print_
-from six.moves import cPickle as pickle
 from six.moves.BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from six.moves.socketserver import ThreadingMixIn
 
