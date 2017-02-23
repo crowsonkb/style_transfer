@@ -96,7 +96,8 @@ def gram_matrix(feat):
     """Computes the Gram matrix corresponding to a feature map."""
     n, mh, mw = feat.shape
     feat = feat.reshape((n, mh * mw))
-    return blas.ssyrk(1 / feat.size, feat)
+    return np.dot(feat, feat.T) / np.float32(feat.size)
+    # return blas.ssyrk(1 / feat.size, feat)
 
 
 def tv_norm(x, beta=2):
