@@ -619,7 +619,7 @@ class StyleTransfer:
 
         # Compute auxiliary image gradient
         if self.aux_image is not None:
-            aux_grad = (self.model.img - self.aux_image) / 255
+            aux_grad = (self.model.img - self.aux_image) / 127.5
             loss += lw * ARGS.aux_weight * norm2(aux_grad)
             axpy(lw * ARGS.aux_weight, aux_grad, grad)
 

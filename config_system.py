@@ -74,7 +74,7 @@ def parse_args(state_obj=None):
     parser.add_argument(
         '--p-power', '-pp', metavar='P', type=ffloat, default=6, help='the p-norm exponent')
     parser.add_argument(
-        '--aux-weight', '-aw', type=ffloat, default=1, help='the auxiliary image factor')
+        '--aux-weight', '-aw', type=ffloat, default=10, help='the auxiliary image factor')
     parser.add_argument(
         '--content-layers', nargs='*', default=['conv4_2'],
         metavar='LAYER', help='the layers to use for content')
