@@ -11,6 +11,8 @@ The current preferred Python distribution for `style_transfer` is [Anaconda](htt
 
 [Cloud computing images](https://github.com/crowsonkb/style_transfer/wiki/Cloud-computing-images) are available with `style_transfer` and its dependencies preinstalled.
 
+Command line arguments are documented in detail in the work-in-progress [parameter usage guide](https://github.com/crowsonkb/style_transfer/wiki/Parameter-usage).
+
 ## Features
 
 - The image is divided into tiles which are processed one per GPU at a time. Since the tiles can be sized so as to fit into GPU memory, this allows arbitrary size images to be processed&mdash;including print size. Tile seam suppression is applied after every iteration so that seams do not accumulate and become visible. (ex: `--size 2048 --tile-size 1024`)
