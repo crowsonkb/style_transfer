@@ -948,7 +948,7 @@ class StyleTransfer:
             elif len(style_masks) != len(style_scaled):
                 raise ValueError('There must be the same number of style images and masks')
             if aux_image:
-                aux_scaled = aux_image.resize(content_scaled.size, Image.LANCZOS)
+                aux_scaled = aux_image.resize(content_scaled[0].size, Image.LANCZOS)
                 self.aux_image = self.model.pil_to_image(aux_scaled)
             if output_image:  # this is not the first scale
                 self.model.img = output_raw
