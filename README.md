@@ -20,10 +20,6 @@ Command line arguments are documented in detail in the work-in-progress [paramet
 - Multi-GPU support (ex: `--devices 0 1 2 3`). Four GPUs, for instance, can process four tiles at a time.
 - Can perform simultaneous Deep Dream and image stylization.
 
-## Known issues
-
-- Use of more than one content layer will produce incorrect feature maps when there is more than one tile.
-
 ## Examples
 
 The obligatory [Golden Gate Bridge](https://raw.githubusercontent.com/jcjohnson/neural-style/master/examples/inputs/golden_gate.jpg) + [The Starry Night](https://raw.githubusercontent.com/jcjohnson/neural-style/master/examples/inputs/starry_night.jpg) (van Gogh) style transfer ([big version](https://s3-us-west-2.amazonaws.com/cb0a-46ef-cc86-8dda/style_transfer_examples/golden_gate_sn_big.jpg)):
