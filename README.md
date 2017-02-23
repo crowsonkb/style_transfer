@@ -7,7 +7,7 @@ Dependencies:
 - [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 2.7 or 3.5+
 - Python packages [numpy](http://www.numpy.org), [Pillow](https://python-pillow.org), [posix-ipc](http://semanchuk.com/philip/posix_ipc/), [scipy](http://www.scipy.org), [six](https://pythonhosted.org/six/)
 
-The current preferred Python distribution for `style_transfer` is [Anaconda](https://www.continuum.io/downloads) (Python 3.5+ version). `style_transfer` will run faster with Anaconda than with other Python distributions due to its inclusion of the [MKL](https://software.intel.com/en-us/intel-mkl) BLAS (mathematics) library. In addition, if you are running Caffe without a GPU, `style_transfer` will run a great deal faster if compiled with MKL (`BLAS := mkl` in `Makefile.config`).
+The current preferred Python distribution for `style_transfer` is [Anaconda](https://www.continuum.io/downloads) (Python 3.6 version). `style_transfer` will run faster with Anaconda than with other Python distributions due to its inclusion of the [MKL](https://software.intel.com/en-us/intel-mkl) BLAS (mathematics) library. In addition, if you are running Caffe without a GPU, `style_transfer` will run a great deal faster if compiled with MKL (`BLAS := mkl` in `Makefile.config`).
 
 [Cloud computing images](https://github.com/crowsonkb/style_transfer/wiki/Cloud-computing-images) are available with `style_transfer` and its dependencies preinstalled.
 
@@ -42,22 +42,22 @@ The obligatory [Golden Gate Bridge](https://raw.githubusercontent.com/jcjohnson/
 
 *If you use pycaffe for other things, you might want to build pycaffe for Python 3 in a second copy of Caffe so you don't break things using Python 2.*
 
-### pycaffe and Anaconda (Python 3.5 version)
+### pycaffe and Anaconda (Python 3.6 version)
 
 On OS X (with Homebrew-provided Boost.Python):
 
 ```
 ANACONDA_HOME := $(HOME)/anaconda3
 PYTHON_INCLUDE := $(ANACONDA_HOME)/include \
-		$(ANACONDA_HOME)/include/python3.5m \
-		$(ANACONDA_HOME)/lib/python3.5/site-packages/numpy/core/include
-PYTHON_LIBRARIES := boost_python3 python3.5m
+		$(ANACONDA_HOME)/include/python3.6m \
+		$(ANACONDA_HOME)/lib/python3.6/site-packages/numpy/core/include
+PYTHON_LIBRARIES := boost_python3 python3.6m
 PYTHON_LIB := $(ANACONDA_HOME)/lib
 ```
 
 The exact name of the Boost.Python library will differ on Linux but the rest should be the same.
 
-### Building pycaffe for Python 3.5 (OS X)
+### Building pycaffe for Python 3.6 (OS X)
 
 On OS X, you can install Python 3 and Boost.Python using [Homebrew](http://brew.sh):
 
@@ -66,12 +66,12 @@ brew install python3
 brew install boost-python --with-python3
 ```
 
-Then insert these lines into Caffe's `Makefile.config` to build against the Homebrew-provided Python 3.5:
+Then insert these lines into Caffe's `Makefile.config` to build against the Homebrew-provided Python 3.6:
 
 ```
-PYTHON_DIR := /usr/local/opt/python3/Frameworks/Python.framework/Versions/3.5
-PYTHON_LIBRARIES := boost_python3 python3.5m
-PYTHON_INCLUDE := $(PYTHON_DIR)/include/python3.5m \
+PYTHON_DIR := /usr/local/opt/python3/Frameworks/Python.framework/Versions/3.6
+PYTHON_LIBRARIES := boost_python3 python3.6m
+PYTHON_INCLUDE := $(PYTHON_DIR)/include/python3.6m \
 	/usr/local/lib/python3.5/site-packages/numpy/core/include
 PYTHON_LIB := $(PYTHON_DIR)/lib
 ```
