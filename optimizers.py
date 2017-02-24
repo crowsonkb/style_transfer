@@ -132,7 +132,8 @@ class LBFGSOptimizer:
         if (xy == 0).all():
             return
         self.xy += xy
-        self.grad[:] = roll2(self.grad, xy)
+        if self.grad is not None:
+            self.grad[:] = roll2(self.grad, xy)
         for s, y in zip(self.sk, self.yk):
             s[:] = roll2(s, xy)
             y[:] = roll2(y, xy)
