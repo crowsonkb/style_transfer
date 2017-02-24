@@ -7,6 +7,7 @@
 
 from __future__ import division
 
+from argparse import Namespace
 from collections import namedtuple, OrderedDict
 from functools import partial
 import io
@@ -44,6 +45,9 @@ else:
 
 # Maximum number of MKL threads between all processes
 MKL_THREADS = None
+
+# State object for configuration file
+STATE = Namespace()
 
 
 def setup_exceptions():
@@ -652,6 +656,14 @@ class StyleTransfer:
     def transfer(self, iterations, params, content_images, style_images,
                  content_masks, style_masks, callback=None):
         """Performs style transfer from style_image to content_image."""
+        if 'scale' not in STATE:
+            STATE.scale = 0
+        else:
+            STATE.scale += 1
+        STATE.step = 0
+        STATE.steps = iterations
+        STATE.img_size = self.model.img.shape[1:]
+
         content_layers, content_weight = self.parse_weights(ARGS.content_layers,
                                                             ARGS.content_weight)
         style_layers, style_weight = self.parse_weights(ARGS.style_layers, 1)
@@ -670,6 +682,8 @@ class StyleTransfer:
         print_('step', 'loss', 'img_size', 'update_size', 'tv_loss', sep=',', file=log, flush=True)
 
         for step in range(1, iterations+1):
+            STATE.step = step-1
+
             # Forward jitter
             jitter_scale, _ = self.model.layer_info([l for l in layers if l in content_layers][0])
             xy = np.array((0, 0))
@@ -904,8 +918,8 @@ def resize_to_fit(image, size, scale_up=False):
 def print_args():
     """Prints out all command-line parameters."""
     print_('Parameters:')
-    for item in sorted(vars(ARGS).items()):
-        print_('% 14s: %s' % item)
+    for key in sorted(ARGS):
+        print_('% 14s: %s' % (key, getattr(ARGS, key)))
     print_()
 
 
@@ -939,7 +953,7 @@ def main():
 
     start_time = timer()
     setup_exceptions()
-    ARGS = parse_args()
+    ARGS = parse_args(STATE)
     print_args()
 
     if MKL_THREADS is not None:

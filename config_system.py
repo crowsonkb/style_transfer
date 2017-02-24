@@ -116,17 +116,26 @@ def parse_args(state_obj=None):
     return args2
 
 
+class ValuePlaceholder:
+    pass
+
+
 class AutocallNamespace:
     def __init__(self, state_obj, **kwargs):
         self.state_obj = state_obj
         self.ns = argparse.Namespace(**kwargs)
-        self.__dict__ = self.ns.__dict__
 
     def __getattr__(self, name):
         value = getattr(self.ns, name)
         if callable(value):
-            return value(self.state_obj)
+            try:
+                return value(self.state_obj)
+            except AttributeError:
+                return ValuePlaceholder()
         return value
+
+    def __iter__(self):
+        yield from vars(self.ns)
 
     def __contains__(self, key):
         return key in self.ns
