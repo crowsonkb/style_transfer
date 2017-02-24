@@ -692,10 +692,8 @@ class StyleTransfer:
 
             # Forward jitter
             jitter_scale, _ = self.model.layer_info([l for l in layers if l in content_layers][0])
-            xy = np.array((0, 0))
             img_size = np.array(self.model.img.shape[-2:])
-            if max(*img_size) > ARGS.tile_size:
-                xy = np.int32(np.random.uniform(-0.5, 0.5, size=2) * img_size) // jitter_scale
+            xy = np.int32(np.random.uniform(-0.5, 0.5, size=2) * img_size) // jitter_scale
             self.model.roll(xy, jitter_scale=jitter_scale)
             self.optimizer.roll(xy * jitter_scale)
 
