@@ -19,7 +19,8 @@ Command line arguments are documented in detail in the work-in-progress [paramet
 - Images are processed at multiple scales. Each scale's final iterate is used as the initial iterate for the following scale. Processing a large image at smaller scales first markedly improves output quality.
 - Multi-GPU support (ex: `--devices 0 1 2 3`). Four GPUs, for instance, can process four tiles at a time.
 - Can perform simultaneous Deep Dream and image stylization.
-- Adam (gradient descent) [4] and L-BFGS [2] optimizers.
+- L-BFGS [2] and Adam (gradient descent) [4] optimizers.
+- In addition to the ordinary total variation denoiser [3], supports high-quality wavelet-based denoising.
 
 ## Examples
 
