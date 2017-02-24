@@ -54,7 +54,7 @@ try:
                         alpha, a, a.shape[0], b, c.shape[1], beta, c, c.shape[1])
         return c
 except (AttributeError, OSError):
-    print('ERROR')
+    pass
 
 
 def norm2(arr):
