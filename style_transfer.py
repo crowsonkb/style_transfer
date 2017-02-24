@@ -623,18 +623,27 @@ class StyleTransfer:
         # Compute style+content gradient
         loss, grad = self.model.eval_sc_grad(*sc_grad_args)
 
-        # Compute total variation gradient
-        tv_loss, tv_grad = tv_norm(self.model.img / 127.5, beta=ARGS.tv_power)
-        loss += lw * ARGS.tv_weight * tv_loss
-
         # Selectively blur edges more to obscure jitter and tile seams
-        tv_mask = np.ones_like(tv_grad)
-        tv_mask[:, :2, :] = 5
-        tv_mask[:, -2:, :] = 5
-        tv_mask[:, :, :2] = 5
-        tv_mask[:, :, -2:] = 5
-        tv_grad *= tv_mask
-        axpy(lw * ARGS.tv_weight, tv_grad, grad)
+        def blur_edges(d_grad):
+            mask = np.ones_like(d_grad)
+            mask[:, :2, :] = 5
+            mask[:, -2:, :] = 5
+            mask[:, :, :2] = 5
+            mask[:, :, -2:] = 5
+            d_grad *= mask
+
+        # Compute denoiser gradient
+        if ARGS.denoiser == 'tv':
+            tv_loss, tv_grad = tv_norm(self.model.img / 127.5, beta=ARGS.tv_power)
+            loss += lw * ARGS.tv_weight * tv_loss
+            blur_edges(tv_grad)
+            axpy(lw * ARGS.tv_weight, tv_grad, grad)
+        elif ARGS.denoiser == 'wavelet':
+            wt_loss, wt_grad = wt_norm(self.model.img / 127.5,
+                                       p=ARGS.wt_power, wavelet=ARGS.wt_type)
+            loss += lw * ARGS.wt_weight * wt_loss
+            blur_edges(wt_grad)
+            axpy(lw * ARGS.wt_weight, wt_grad, grad)
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
         p = ARGS.p_power

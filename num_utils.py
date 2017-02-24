@@ -10,6 +10,7 @@ import numpy as np
 import numpy.ctypeslib as npct
 from PIL import Image
 from PIL.Image import NEAREST, BILINEAR, BICUBIC, LANCZOS  # pylint: disable=unused-import
+import pywt
 from scipy.linalg import blas
 
 # Machine epsilon for float32
@@ -60,6 +61,13 @@ except (AttributeError, OSError):
 def norm2(arr):
     """Returns 1/2 the L2 norm squared."""
     return np.sum(arr**2) / 2
+
+
+def p_norm(arr, p=2):
+    """Returns the pth power of the p-norm and its gradient."""
+    loss = np.sum(abs(arr)**p)
+    grad = p * np.sign(arr) * abs(arr)**(p-1)
+    return loss, grad
 
 
 def normalize(arr):
@@ -142,4 +150,15 @@ def tv_norm(x, beta=2):
     grad = dx_diff + dy_diff
     grad -= roll_by_1(dx_diff, 1, axis=2)
     grad -= roll_by_1(dy_diff, 1, axis=1)
+    return loss, grad
+
+
+def wt_norm(x, p=1, wavelet='haar'):
+    """Computes the wavelet denoising p-norm and its gradient."""
+    coeffs = pywt.wavedec2(x, wavelet, mode='periodic')
+    coeffs[0][:] = 0
+    inv = pywt.waverec2(coeffs, wavelet, mode='periodic')
+    if inv.shape != x.shape:
+        inv = inv[:, :x.shape[1], :x.shape[2]]
+    loss, grad = p_norm(inv, p)
     return loss, grad
