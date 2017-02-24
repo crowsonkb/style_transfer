@@ -371,6 +371,7 @@ class CaffeModel:
         self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
         self.data['data'] = img
         self.net.forward(end=self.last_layer)
+        self.data[self.last_layer] = np.maximum(0, self.data[self.last_layer])
         return {layer: self.data[layer] for layer in layers}
 
     def eval_features_once(self, pool, layers, tile_size=512):
@@ -475,6 +476,7 @@ class CaffeModel:
         for layer in layers:
             self.diff[layer] = 0
         self.net.forward(end=layers[0])
+        self.data[layers[0]] = np.maximum(0, self.data[layers[0]])
 
         for i, layer in enumerate(layers):
             lw = layer_weights[layer]
