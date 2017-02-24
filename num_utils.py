@@ -156,9 +156,9 @@ def tv_norm(x, beta=2):
 
 def wt_norm(x, p=1, wavelet='haar'):
     """Computes the wavelet denoising p-norm and its gradient."""
-    coeffs = pywt.wavedec2(x, wavelet, mode='periodic')
+    coeffs = pywt.wavedec2(x, wavelet, mode='per')
     coeffs[0][:] = 0
-    inv = pywt.waverec2(coeffs, wavelet, mode='periodic')
+    inv = pywt.waverec2(coeffs, wavelet, mode='per')
     if inv.shape != x.shape:
         inv = inv[:, :x.shape[1], :x.shape[2]]
     loss, grad = p_norm(inv, p)
