@@ -41,8 +41,9 @@ c_float_arr2d = npct.ndpointer(np.float32, ndim=2, flags='C')
 try:
     mkl = ctypes.cdll.LoadLibrary(ctypes.util.find_library('mkl_rt'))
     mkl.cblas_ssymm.restype = None
-    mkl.cblas_ssymm.argtypes = [c_int32, c_int32, c_int32, c_int32, c_int32, c_float, c_float_arr2d,
-                                c_int32, c_float_arr2d, c_int32, c_float, c_float_arr2d, c_int32]
+    mkl.cblas_ssymm.argtypes = [
+        c_int32, c_int32, c_int32, c_int32, c_int32, c_float, c_float_arr2d, c_int32,
+        c_float_arr2d, c_int32, c_float, c_float_arr2d, c_int32]
 
     def symm(a, b, c=None, alpha=1, beta=0, side=LEFT, uplo=UPPER):
         """Wraps MKL's cblas_ssymm() scalar-symmetric matrix-matrix product. If side is LEFT, sets

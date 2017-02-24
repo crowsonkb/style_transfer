@@ -69,8 +69,8 @@ class AdamOptimizer:
 
 
 class LBFGSOptimizer:
+    """L-BFGS [2] for function minimization, with fixed size steps (no line search)."""
     def __init__(self, params, initial_step=0.1, n_corr=10):
-        """L-BFGS [2] for function minimization, with fixed size steps (no line search)."""
         self.params = params
         self.initial_step = initial_step
         self.n_corr = n_corr
@@ -85,7 +85,7 @@ class LBFGSOptimizer:
 
         # Compute and take a step, being cautious if the L-BFGS memory is not full
         s = -self.inv_hv(self.grad)
-        if not len(self.sk):
+        if not self.sk:
             s *= self.initial_step / np.mean(abs(s))
         elif len(self.sk) < self.n_corr:
             s *= len(self.sk) / self.n_corr
@@ -117,7 +117,7 @@ class LBFGSOptimizer:
             alphas.append(dot(s, p) / sy)
             axpy(-alphas[-1], y, p)
 
-        if len(self.sk) > 0:
+        if self.sk:
             sy, y = self.syk[-1], self.yk[-1]
             p *= sy / dot(y, y)
 
