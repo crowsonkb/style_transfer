@@ -499,10 +499,7 @@ class CaffeModel:
                 feat = self.data[layer].reshape((n, mh * mw))
                 gram_diff = current_gram - style.grams[layer]
                 s_grad = self._arr_pool.array_like(feat)
-                try:
-                    num_utils.symm(gram_diff, feat, s_grad)
-                except AttributeError:
-                    np.dot(gram_diff, feat, s_grad)
+                np.dot(gram_diff, feat, s_grad)
                 s_grad = s_grad.reshape((n, mh, mw))
                 s_grad *= style.masks[layer][start_[0]:end[0], start_[1]:end[1]]
                 loss += lw * style_weight[layer] * norm2(current_gram - style.grams[layer]) * \
