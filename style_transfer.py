@@ -28,6 +28,7 @@ from six.moves.BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from six.moves.socketserver import ThreadingMixIn
 
 from config_system import ffloat, parse_args
+import num_utils
 from num_utils import *
 from optimizers import AdamOptimizer, LBFGSOptimizer
 
@@ -265,6 +266,21 @@ class TileWorkerPool:
             worker.req_q.put(SetThreadCount(threads))
 
 
+class ArrayPool:
+    """A pool of preallocated (C-contiguous) NumPy arrays."""
+    def __init__(self):
+        self.pool = {}
+
+    def array(self, shape, dtype):
+        key = (shape, dtype)
+        if key not in self.pool:
+            self.pool[key] = np.zeros(shape, dtype)
+        return self.pool[key]
+
+    def array_like(self, arr):
+        return self.array(arr.shape, arr.dtype)
+
+
 class CaffeModel:
     """A Caffe neural network model."""
     def __init__(self, deploy, weights, mean=(0, 0, 0), shapes=None, placeholder=False):
@@ -284,6 +300,7 @@ class CaffeModel:
         self.contents = []
         self.styles = []
         self.img = None
+        self._arr_pool = ArrayPool()
 
     def get_image(self, params=None):
         """Gets the current model input (or provided alternate input) as a PIL image."""
@@ -478,8 +495,12 @@ class CaffeModel:
                 current_gram = gram_matrix(self.data[layer])
                 n, mh, mw = self.data[layer].shape
                 feat = self.data[layer].reshape((n, mh * mw))
-                # s_grad = blas.ssymm(1, current_gram - style.grams[layer], feat)
-                s_grad = np.dot(current_gram - style.grams[layer], feat)
+                gram_diff = current_gram - style.grams[layer]
+                s_grad = self._arr_pool.array_like(feat)
+                try:
+                    num_utils.symm(gram_diff, feat, s_grad)
+                except AttributeError:
+                    np.dot(gram_diff, feat, s_grad)
                 s_grad = s_grad.reshape((n, mh, mw))
                 s_grad *= style.masks[layer][start_[0]:end[0], start_[1]:end[1]]
                 loss += lw * style_weight[layer] * norm2(current_gram - style.grams[layer]) * \

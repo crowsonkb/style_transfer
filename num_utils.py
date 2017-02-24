@@ -1,9 +1,13 @@
 """Numerical utilities."""
 
+import ctypes
+import ctypes.util
+from ctypes import c_float, c_int32
 from concurrent.futures import ThreadPoolExecutor
 import os
 
 import numpy as np
+import numpy.ctypeslib as npct
 from PIL import Image
 from PIL.Image import NEAREST, BILINEAR, BICUBIC, LANCZOS  # pylint: disable=unused-import
 from scipy.linalg import blas
@@ -26,6 +30,31 @@ def axpy(a, x, y):
         y[:] = y_
     return y
 
+
+ROW_MAJOR, COL_MAJOR = 101, 102
+UPPER, LOWER = 121, 122
+LEFT, RIGHT = 141, 142
+
+c_float_arr2d = npct.ndpointer(np.float32, ndim=2, flags='C')
+
+try:
+    mkl = ctypes.cdll.LoadLibrary(ctypes.util.find_library('mkl_rt'))
+    mkl.cblas_ssymm.restype = None
+    mkl.cblas_ssymm.argtypes = [c_int32, c_int32, c_int32, c_int32, c_int32, c_float, c_float_arr2d,
+                                c_int32, c_float_arr2d, c_int32, c_float, c_float_arr2d, c_int32]
+
+    def symm(a, b, c=None, alpha=1, beta=0, side=LEFT, uplo=UPPER):
+        """Wraps MKL's cblas_ssymm() scalar-symmetric matrix-matrix product. If side is LEFT, sets
+        C = alpha * A @ B + beta * C; if RIGHT, sets C = alpha * B @ A + beta * C. See
+        https://software.intel.com/en-us/node/520779.
+        """
+        if c is None:
+            c = np.zeros_like(b)
+        mkl.cblas_ssymm(ROW_MAJOR, side, uplo, c.shape[0], c.shape[1],
+                        alpha, a, a.shape[0], b, c.shape[1], beta, c, c.shape[1])
+        return c
+except (AttributeError, OSError):
+    print('ERROR')
 
 def norm2(arr):
     """Returns 1/2 the L2 norm squared."""
