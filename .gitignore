@@ -8,3 +8,4 @@ inputs
 *.state
 *.csv
 .updated
+tmp
