@@ -144,6 +144,7 @@ RGB_TO_YUV = np.linalg.inv(YUV_TO_RGB)
 
 
 def chw_convert(img, mat):
+    """Given a CxHxW format image and a 3x3 matrix, performs colorspace conversion on the image."""
     return np.dot(mat, img.reshape((img.shape[0], -1))).reshape(img.shape)
 
 
@@ -163,7 +164,8 @@ def tv_norm(x, beta=2):
 
 
 def wt_norm(x, p=1, wavelet='haar'):
-    """Computes the wavelet denoising p-norm and its gradient."""
+    """Computes the wavelet denoising p-norm and its gradient. It is computed in the YUV color
+    space and chroma contributes twice as strongly to the gradient as luma."""
     x = chw_convert(x, RGB_TO_YUV)
     coeffs = pywt.wavedec2(x, wavelet, mode='per')
     coeffs[0][:] = 0
