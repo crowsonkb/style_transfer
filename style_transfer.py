@@ -902,6 +902,9 @@ class ProgressHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
+    def log_message(*args, **kwargs):
+        pass
+
 
 def resize_to_fit(image, size, scale_up=False):
     """Resizes image to fit into a size-by-size square."""
