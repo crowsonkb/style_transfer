@@ -139,6 +139,14 @@ def gram_matrix(feat):
     # return blas.ssyrk(1 / feat.size, feat)
 
 
+YUV_TO_RGB = np.float32([[1, 0, 1.13983], [1, -0.39465, -0.5806], [1, 2.03211, 0]])
+RGB_TO_YUV = np.linalg.inv(YUV_TO_RGB)
+
+
+def chw_convert(img, mat):
+    return np.dot(mat, img.reshape((img.shape[0], -1))).reshape(img.shape)
+
+
 def tv_norm(x, beta=2):
     """Computes the total variation norm and its gradient. From jcjohnson/cnn-vis and [3]."""
     x_diff = x - roll_by_1(x.copy(), -1, axis=2)
@@ -156,12 +164,16 @@ def tv_norm(x, beta=2):
 
 def wt_norm(x, p=1, wavelet='haar'):
     """Computes the wavelet denoising p-norm and its gradient."""
+    x = chw_convert(x, RGB_TO_YUV)
     coeffs = pywt.wavedec2(x, wavelet, mode='per')
     coeffs[0][:] = 0
+    for level in coeffs[1:]:
+        for sb in level:
+            sb[1:] *= 2
     inv = pywt.waverec2(coeffs, wavelet, mode='per')
     if inv.shape != x.shape:
         inv = inv[:, :x.shape[1], :x.shape[2]]
-    loss, grad = p_norm(inv, p)
+    loss, grad = p_norm(chw_convert(inv, YUV_TO_RGB), p)
     return loss, grad
 
 
