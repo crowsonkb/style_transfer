@@ -9,6 +9,7 @@ from __future__ import division
 
 from argparse import Namespace
 from collections import namedtuple, OrderedDict
+from datetime import datetime
 from functools import partial
 import io
 import json
@@ -45,6 +46,9 @@ else:
 
 # Maximum number of MKL threads between all processes
 MKL_THREADS = None
+
+# Run identifier
+RUN = ''
 
 # State object for configuration file
 STATE = Namespace()
@@ -836,7 +840,7 @@ class Progress:
         self.loss = loss
         self.tv_loss = tv_loss
         if self.save_every and self.step % self.save_every == 0:
-            self.transfer.current_output.save('out_%04d.png' % self.step)
+            self.transfer.current_output.save(RUN + '_out_%04d.png' % self.step)
         if self.step == 1:
             if self.url:
                 webbrowser.open(self.url)
@@ -953,12 +957,17 @@ def init_model(resp_q, caffe_path, model, weights, mean):
 
 def main():
     """CLI interface for style transfer."""
-    global ARGS
+    global ARGS, RUN
 
     start_time = timer()
     setup_exceptions()
     ARGS = parse_args(STATE)
     print_args()
+
+    now = datetime.now()
+    RUN = '%02d%02d%02d_%02d%02d%02d' % \
+        (now.year % 100, now.month, now.day, now.hour, now.minute, now.second)
+    print_('Run %s started.\n' % RUN)
 
     if MKL_THREADS is not None:
         print_('MKL detected, %d threads maximum.\n' % MKL_THREADS)
@@ -1017,13 +1026,16 @@ def main():
         print_()
 
     if transfer.current_output:
-        print_('Saving output as %s.' % ARGS.output_image)
+        output_image = ARGS.output_image
+        if not output_image:
+            output_image = RUN + '_out.png'
+        print_('Saving output as %s.' % output_image)
         png_info = PngImagePlugin.PngInfo()
         png_info.add_itxt('Comment', get_image_comment())
-        transfer.current_output.save(ARGS.output_image, pnginfo=png_info)
-        a, _, _ = ARGS.output_image.rpartition('.')
+        transfer.current_output.save(output_image, pnginfo=png_info)
+        a, _, _ = output_image.rpartition('.')
     time_spent = timer() - start_time
-    print_('Exiting after %dm %.2fs.' % (time_spent // 60, time_spent % 60))
+    print_('Run %s ending after %dm %.3fs.' % (RUN, time_spent // 60, time_spent % 60))
 
 if __name__ == '__main__':
     main()

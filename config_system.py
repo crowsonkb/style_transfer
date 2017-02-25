@@ -23,7 +23,7 @@ def parse_args(state_obj=None):
     parser.add_argument('--content-image', '-ci', help='the content image')
     parser.add_argument('--style-images', '-si', nargs='+', default=[],
                         metavar='STYLE_IMAGE', help='the style images')
-    parser.add_argument('--output_image', '-oi', default='out.png', help='the output image')
+    parser.add_argument('--output_image', '-oi', default='', help='the output image')
     parser.add_argument('--init-image', '-ii', metavar='IMAGE', help='the initial image')
     parser.add_argument('--aux-image', '-ai', metavar='IMAGE', help='the auxiliary image')
     parser.add_argument('--style-masks', nargs='+', metavar='MASK', default=[],
