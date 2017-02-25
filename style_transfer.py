@@ -763,8 +763,11 @@ class StyleTransfer:
             style_scaled = []
             style_masks_scaled = []
             for image in style_images:
-                style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale),
-                                                  scale_up=ARGS.style_scale_up))
+                if ARGS.style_scale >= 32:
+                    style_scaled.append(resize_to_fit(image, ARGS.style_scale, scale_up=True))
+                else:
+                    style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale),
+                                                      scale_up=ARGS.style_scale_up))
             for arr in style_masks:
                 style_masks_scaled.append(np.maximum(0, resize(arr, (h, w)) / 255))
             if len(style_masks) == 0:
