@@ -449,23 +449,20 @@ class CaffeModel:
             if layer in content_layers or layer in style_layers:
                 layers.append(layer)
 
-        # Prepare Gram matrices from style image
-        print_('Preprocessing the style image...')
-        grams = {}
-        for layer in style_layers:
-            _, ch = self.layer_info(layer)
-            grams[layer] = np.zeros((ch, ch), np.float32)
+        # Prepare Gram matrices from style images
+        print_('Preprocessing the style image(s)...')
         for image, mask in zip(style_images, style_masks):
+            grams = {}
             self.set_image(image)
-            feats = self.prepare_features(pool, style_layers, tile_size)
+            feats = self.prepare_features(pool, style_layers, tile_size, passes=1)
             for layer in feats:
-                axpy(1 / len(style_images), gram_matrix(feats[layer]), grams[layer])
+                grams[layer] = gram_matrix(feats[layer])
             masks = self.make_layer_masks(mask)
             self.styles.append(StyleData(grams, masks))
 
         # Prepare feature maps from content image
         for image, mask in zip(content_images, content_masks):
-            print_('Preprocessing the content image...')
+            print_('Preprocessing the content image(s)...')
             self.set_image(image)
             feats = self.prepare_features(pool, content_layers, tile_size)
             masks = self.make_layer_masks(mask)
@@ -510,9 +507,10 @@ class CaffeModel:
                 np.dot(gram_diff, feat, s_grad)
                 s_grad = s_grad.reshape((n, mh, mw))
                 s_grad *= style.masks[layer][start_[0]:end[0], start_[1]:end[1]]
-                loss += lw * style_weight[layer] * norm2(gram_diff) * \
+                loss += lw * style_weight[layer] * norm2(gram_diff) / len(self.styles) * \
                     np.mean(style.masks[layer][start_[0]:end[0], start_[1]:end[1]]) / 2
-                axpy(lw * style_weight[layer], normalize(s_grad), self.diff[layer])
+                axpy(lw * style_weight[layer] / len(self.styles),
+                     normalize(s_grad), self.diff[layer])
 
             # Compute the content and style gradients
             if layer in content_layers:
