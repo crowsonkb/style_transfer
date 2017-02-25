@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from num_utils import axpy, BILINEAR, dot, EPS, resize, roll2
+from num_utils import axpy, BILINEAR, dot, EPS, EWMA, resize, roll2
 
 
 class AdamOptimizer:
@@ -12,16 +12,15 @@ class AdamOptimizer:
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
-        self.b1, self.b2, self.bp1 = b1, b2, bp1
         self.decay, self.decay_power = decay, decay_power
         self.biased_g1 = biased_g1
 
         self.i = 0
         self.step = 0
         self.xy = np.zeros(2, dtype=np.int32)
-        self.g1 = np.zeros_like(params)
-        self.g2 = np.zeros_like(params)
-        self.p1 = np.zeros_like(params)
+        self.g1 = EWMA(b1, initial_value=np.zeros_like(params))
+        self.g2 = EWMA(b2, initial_value=np.zeros_like(params))
+        self.p1 = EWMA(bp1, initial_value=np.zeros_like(params))
 
     def update(self, opfunc):
         """Returns a step's parameter update given a loss/gradient evaluation function."""
@@ -33,29 +32,23 @@ class AdamOptimizer:
         loss, grad = opfunc(self.params)
 
         # Adam
-        self.g1 *= self.b1
-        axpy(1 - self.b1, grad, self.g1)
-        self.g2 *= self.b2
-        axpy(1 - self.b2, grad**2, self.g2)
-        step_size *= np.sqrt(1 - self.b2**self.step)
-        if not self.biased_g1:
-            step_size /= 1 - self.b1**self.step
-        step = self.g1 / (np.sqrt(self.g2) + EPS)
+        self.g1.update(grad)
+        self.g2.update(grad**2)
+        step = self.g1.get(not self.biased_g1) / (np.sqrt(self.g2.get()) + EPS)
         axpy(-step_size, step, self.params)
 
         # Iterate averaging
-        self.p1 *= self.bp1
-        axpy(1 - self.bp1, self.params, self.p1)
-        return roll2(self.p1, -self.xy) / (1 - self.bp1**self.step), loss
+        self.p1.update(self.params)
+        return roll2(self.p1.get(), -self.xy), loss
 
     def roll(self, xy):
         """Rolls the optimizer's internal state."""
         if (xy == 0).all():
             return
         self.xy += xy
-        self.g1[:] = roll2(self.g1, xy)
-        self.g2[:] = roll2(self.g2, xy)
-        self.p1[:] = roll2(self.p1, xy)
+        roll2(self.g1.value, xy)
+        roll2(self.g2.value, xy)
+        roll2(self.p1.value, xy)
 
     def set_params(self, last_iterate):
         """Sets params to the supplied array (a possibly-resized or altered last non-averaged
@@ -63,9 +56,9 @@ class AdamOptimizer:
         self.i = 0
         self.params = last_iterate
         hw = self.params.shape[-2:]
-        self.g1 = resize(self.g1, hw)
-        self.g2 = np.maximum(0, resize(self.g2, hw, method=BILINEAR))
-        self.p1 = resize(self.p1, hw)
+        self.g1.value = resize(self.g1.value, hw)
+        self.g2.value = np.maximum(0, resize(self.g2.value, hw, method=BILINEAR))
+        self.p1.value = resize(self.p1.value, hw)
 
 
 class LBFGSOptimizer:

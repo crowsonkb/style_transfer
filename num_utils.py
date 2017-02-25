@@ -124,11 +124,11 @@ def roll_by_1(arr, shift, axis):
 
 
 def roll2(arr, xy):
-    """Translates an array by the shift xy, wrapping at the edges."""
+    """Translates an array in-place by the shift xy, wrapping at the edges."""
     if (xy == 0).all():
         return arr
-    # return np.roll(arr, xy, (2, 1))
-    return np.roll(np.roll(arr, xy[0], -1), xy[1], -2)
+    arr[:] = np.roll(np.roll(arr, xy[0], -1), xy[1], -2)
+    return arr
 
 
 def gram_matrix(feat):
@@ -163,3 +163,23 @@ def wt_norm(x, p=1, wavelet='haar'):
         inv = inv[:, :x.shape[1], :x.shape[2]]
     loss, grad = p_norm(inv, p)
     return loss, grad
+
+
+class EWMA:
+    """An exponentially weighted moving average with initialization bias correction."""
+    def __init__(self, smoothing, initial_value=0):
+        self.smoothing = smoothing
+        self.t = 0
+        self.value = initial_value
+
+    def get(self, bias_correction=True):
+        """Gets the current value of the running average."""
+        if self.t == 0 or not bias_correction:
+            return self.value
+        return self.value / (1 - self.smoothing**self.t)
+
+    def update(self, datum):
+        """Updates the running average with a new observation."""
+        self.t += 1
+        self.value *= self.smoothing
+        self.value += (1 - self.smoothing) * datum
