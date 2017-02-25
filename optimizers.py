@@ -16,7 +16,6 @@ class AdamOptimizer:
         self.biased_g1 = biased_g1
 
         self.i = 0
-        self.step = 0
         self.xy = np.zeros(2, dtype=np.int32)
         self.g1 = EWMA(b1, initial_value=np.zeros_like(params))
         self.g2 = EWMA(b2, initial_value=np.zeros_like(params))
@@ -26,9 +25,8 @@ class AdamOptimizer:
         """Returns a step's parameter update given a loss/gradient evaluation function."""
         # Step size decay
         step_size = self.step_size / (1 + self.decay * self.i)**self.decay_power
-
         self.i += 1
-        self.step += 1
+
         loss, grad = opfunc(self.params)
 
         # Adam
