@@ -688,8 +688,6 @@ class StyleTransfer:
 
         old_img = self.model.img.copy()
         self.step += 1
-        log = open('log.csv', 'w')
-        print_('step', 'loss', 'img_size', 'update_size', 'tv_loss', sep=',', file=log, flush=True)
 
         for step in range(1, iterations+1):
             STATE.step = step-1
@@ -726,9 +724,6 @@ class StyleTransfer:
             # Record current output
             self.current_raw = avg_img
             self.current_output = self.model.get_image(avg_img)
-
-            print_(step, loss / avg_img.size, img_size, update_size, tv_loss, sep=',', file=log,
-                   flush=True)
 
             if callback is not None:
                 callback(step=step, update_size=update_size, loss=loss / avg_img.size,
