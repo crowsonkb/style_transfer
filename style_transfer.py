@@ -510,7 +510,7 @@ class CaffeModel:
                 np.dot(gram_diff, feat, s_grad)
                 s_grad = s_grad.reshape((n, mh, mw))
                 s_grad *= style.masks[layer][start_[0]:end[0], start_[1]:end[1]]
-                loss += lw * style_weight[layer] * norm2(current_gram - style.grams[layer]) * \
+                loss += lw * style_weight[layer] * norm2(gram_diff) * \
                     np.mean(style.masks[layer][start_[0]:end[0], start_[1]:end[1]]) / 2
                 axpy(lw * style_weight[layer], normalize(s_grad), self.diff[layer])
 
