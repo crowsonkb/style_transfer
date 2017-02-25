@@ -170,6 +170,7 @@ def wt_norm(x, p=1, wavelet='haar'):
     for level in coeffs[1:]:
         for sb in level:
             sb[1:] *= 2
+    coeffs[-1][2][:] *= 2
     inv = pywt.waverec2(coeffs, wavelet, mode='per')
     if inv.shape != x.shape:
         inv = inv[:, :x.shape[1], :x.shape[2]]
