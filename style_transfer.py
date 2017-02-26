@@ -31,7 +31,6 @@ from six.moves.BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from six.moves.socketserver import ThreadingMixIn
 
 from config_system import ffloat, parse_args
-from display_image import ImageWindow
 import log_utils
 import num_utils
 from num_utils import *
@@ -611,7 +610,9 @@ class StyleTransfer:
         self.step = 0
         self.window = None
         if ARGS.ui == 'gui':
+            from display_image import ImageWindow
             self.window = ImageWindow()
+
 
     @staticmethod
     def parse_weights(args, master_weight):
