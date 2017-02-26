@@ -100,7 +100,8 @@ def parse_args(state_obj=None):
         '--port', '-p', type=int, default=8000,
         help='the port to use for the http server')
     parser.add_argument(
-        '--no-browser', action='store_true', help='don\'t open a web browser')
+        '--ui', default='browser', choices=['browser', 'gui', 'none'],
+        help='the gui type to use')
     parser.add_argument(
         '--hidpi', action='store_true', help='display the image at 2x scale in the browser')
     parser.add_argument(

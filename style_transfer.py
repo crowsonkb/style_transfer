@@ -31,6 +31,7 @@ from six.moves.BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from six.moves.socketserver import ThreadingMixIn
 
 from config_system import ffloat, parse_args
+from display_image import ImageWindow
 import num_utils
 from num_utils import *
 from optimizers import AdamOptimizer, LBFGSOptimizer
@@ -618,6 +619,9 @@ class StyleTransfer:
         self.optimizer = None
         self.pool = None
         self.step = 0
+        self.window = None
+        if ARGS.ui == 'gui':
+            self.window = ImageWindow()
 
     @staticmethod
     def parse_weights(args, master_weight):
@@ -750,6 +754,9 @@ class StyleTransfer:
             if callback is not None:
                 callback(step=step, update_size=update_size, loss=loss / avg_img.size,
                          tv_loss=tv_loss)
+
+            if self.window is not None:
+                self.window.display(self.current_output)
 
         return self.current_output
 
@@ -1033,7 +1040,7 @@ def main():
     server.transfer = transfer
     server.hidpi = ARGS.hidpi
     progress_args = {}
-    if not ARGS.no_browser:
+    if ARGS.ui == 'browser':
         progress_args['url'] = url
     steps = 0
     server.progress = Progress(
