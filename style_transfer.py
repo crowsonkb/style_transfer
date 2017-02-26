@@ -13,6 +13,7 @@ from datetime import datetime
 from functools import partial
 import io
 import json
+import logging
 import multiprocessing as mp
 import os
 import sys
@@ -60,6 +61,19 @@ def setup_exceptions():
         sys.excepthook = AutoFormattedTB(mode='Verbose', color_scheme='Neutral')
     except ImportError:
         pass
+
+
+def setup_logging(name):
+    fmt = '[%(levelname)1.1s %(asctime)s.%(msecs)03d %(process)d] %(message)s'
+    datefmt = '%H:%M:%S'
+    level = logging.INFO
+    if 'ST_DEBUG' in os.environ:
+        level = logging.DEBUG
+    logging.basicConfig(level=level, format=fmt, datefmt=datefmt)
+    logging.captureWarnings(True)
+    return logging.getLogger(name)
+
+logger = setup_logging('style_transfer')
 
 
 def set_thread_count(threads):
@@ -119,7 +133,9 @@ class TileWorker:
 
     def run(self):
         """This method runs in the new process."""
+        global logger
         setup_exceptions()
+        logger = setup_logging('tile_worker')
 
         if self.caffe_path is not None:
             sys.path.append(self.caffe_path + '/python')
@@ -146,6 +162,7 @@ class TileWorker:
     def process_one_request(self):
         """Receives one request from the master process and acts on it."""
         req = self.req_q.get()
+        logger.debug('Started request %s', req.__class__.__name__)
         layers = []
 
         if isinstance(req, FeatureMapRequest):
@@ -189,6 +206,8 @@ class TileWorker:
 
         if isinstance(req, SetThreadCount):
             set_thread_count(req.threads)
+
+        logger.debug('Finished request %s', req.__class__.__name__)
 
 
 class TileWorkerPoolError(Exception):
@@ -624,6 +643,7 @@ class StyleTransfer:
 
         # Compute style+content gradient
         loss, grad = self.model.eval_sc_grad(*sc_grad_args)
+        logger.debug('sc_grad norm: %g', np.mean(abs(grad)))
 
         # Selectively blur edges more to obscure jitter and tile seams
         def blur_edges(d_grad):
@@ -639,23 +659,27 @@ class StyleTransfer:
             tv_loss, tv_grad = tv_norm(self.model.img / 127.5, beta=ARGS.tv_power)
             loss += lw * ARGS.tv_weight * tv_loss
             blur_edges(tv_grad)
+            logger.debug('tv_grad norm: %g', np.mean(abs(tv_grad)) * lw * ARGS.tv_weight)
             axpy(lw * ARGS.tv_weight, tv_grad, grad)
         elif ARGS.denoiser == 'wavelet':
             wt_loss, wt_grad = wt_norm(self.model.img / 127.5,
                                        p=ARGS.wt_power, wavelet=ARGS.wt_type)
             loss += lw * ARGS.wt_weight * wt_loss
             blur_edges(wt_grad)
+            logger.debug('wt_grad norm: %g', np.mean(abs(wt_grad)) * lw * ARGS.wt_weight)
             axpy(lw * ARGS.wt_weight, wt_grad, grad)
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
         p_loss, p_grad = p_norm((self.model.img + self.model.mean - 127.5) / 127.5, p=ARGS.p_power)
         loss += lw * ARGS.p_weight * p_loss
+        logger.debug('p_grad norm:  %g', np.mean(abs(p_grad)) * lw * ARGS.p_weight)
         axpy(lw * ARGS.p_weight, p_grad, grad)
 
         # Compute auxiliary image gradient
         if self.aux_image is not None:
             aux_grad = (self.model.img - self.aux_image) / 127.5
             loss += lw * ARGS.aux_weight * norm2(aux_grad)
+            logger.debug('aux_grad norm: %g', np.mean(abs(aux_grad)) * lw * ARGS.aux_weight)
             axpy(lw * ARGS.aux_weight, aux_grad, grad)
 
         self.model.img = old_img
@@ -942,7 +966,10 @@ def get_image_comment():
 
 def init_model(resp_q, caffe_path, model, weights, mean):
     """Puts the list of layer shapes into resp_q. To be run in a separate process."""
+    global logger
     setup_exceptions()
+    logger = setup_logging('init_model')
+
     if caffe_path:
         sys.path.append(caffe_path + '/python')
     import caffe
@@ -969,13 +996,13 @@ def main():
     print_('Run %s started.\n' % RUN)
 
     if MKL_THREADS is not None:
-        print_('MKL detected, %d threads maximum.\n' % MKL_THREADS)
+        print_('MKL detected, %d threads maximum.' % MKL_THREADS)
 
     os.environ['GLOG_minloglevel'] = '2'
     if ARGS.caffe_path:
         sys.path.append(ARGS.caffe_path + '/python')
 
-    print_('Loading %s.' % ARGS.weights)
+    print_('\nLoading %s.' % ARGS.weights)
     resp_q = CTX.Queue()
     CTX.Process(target=init_model,
                 args=(resp_q, ARGS.caffe_path, ARGS.model, ARGS.weights, ARGS.mean)).start()
