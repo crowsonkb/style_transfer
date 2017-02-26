@@ -1,3 +1,4 @@
+matplotlib >= 2.0.0
 numpy >= 1.11.1
 Pillow >= 3.3.1
 PyWavelets >= 0.5.1
@@ -6,6 +7,5 @@ scipy >= 0.18.0
 six >= 1.10.0
 
 # pycaffe dependencies
-matplotlib >= 1.5.3
 protobuf >= 3.1.0
 scikit-image >= 0.12.3
