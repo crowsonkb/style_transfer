@@ -1,10 +1,10 @@
 """Numerical utilities."""
 
+from concurrent.futures import ThreadPoolExecutor
 import ctypes
 import ctypes.util
 from ctypes import c_float, c_int32
-from concurrent.futures import ThreadPoolExecutor
-import os
+from functools import partial
 
 import numpy as np
 import numpy.ctypeslib as npct
@@ -66,9 +66,11 @@ def norm2(arr):
 
 def p_norm(arr, p=2):
     """Returns the pth power of the p-norm and its gradient."""
-    loss = np.sum(abs(arr)**p)
-    grad = p * np.sign(arr) * abs(arr)**(p-1)
-    return loss, grad
+    if p == 1:
+        return np.sum(abs(arr)), np.sign(arr)
+    elif p == 2:
+        return np.sum(arr**2), 2 * arr
+    return np.sum(abs(arr)**p), p * np.sign(arr) * abs(arr)**(p-1)
 
 
 def normalize(arr):
@@ -91,7 +93,7 @@ def resize(a, hw, method=Image.LANCZOS):
     ch = a.shape[0]
     b = np.zeros((ch, hw[0], hw[1]), np.float32)
 
-    with ThreadPoolExecutor(max_workers=os.cpu_count()) as ex:
+    with ThreadPoolExecutor(max_workers=3) as ex:
         futs = [ex.submit(_resize, a[i], b[i]) for i in range(ch)]
         _ = [fut.result() for fut in futs]
 
@@ -166,18 +168,20 @@ def tv_norm(x, beta=2):
 def wt_norm(x, p=1, wavelet='haar'):
     """Computes the wavelet denoising p-norm and its gradient. It is computed in the YUV color
     space and chroma contributes twice as strongly to the gradient as luma."""
-    x = chw_convert(x, RGB_TO_YUV)
-    coeffs = pywt.wavedec2(x, wavelet, mode='per')
-    coeffs[0][:] = 0
-    for level in coeffs[1:]:
-        for sb in level:
-            sb[1:] *= 2
-    coeffs[-1][2][:] *= 2
-    inv = pywt.waverec2(coeffs, wavelet, mode='per')
-    if inv.shape != x.shape:
-        inv = inv[:, :x.shape[1], :x.shape[2]]
-    loss, grad = p_norm(chw_convert(inv, YUV_TO_RGB), p)
-    return loss, grad
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        x = chw_convert(x, RGB_TO_YUV)
+        coeffs = list(ex.map(partial(pywt.wavedec2, wavelet=wavelet, mode='per'), x))
+        for i, channel in enumerate(coeffs):
+            channel[0][:] = 0
+            channel[-1][2][:] *= 2
+            if i > 0:
+                for level in channel[1:]:
+                    for sb in level:
+                        sb *= 2
+        inv = np.stack(ex.map(partial(pywt.waverec2, wavelet=wavelet, mode='per'), coeffs))
+        if inv.shape != x.shape:
+            inv = inv[:, :x.shape[1], :x.shape[2]]
+        return p_norm(chw_convert(inv, YUV_TO_RGB), p)
 
 
 class EWMA:
