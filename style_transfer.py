@@ -945,9 +945,17 @@ def resize_to_fit(image, size, scale_up=False):
 
 def print_args():
     """Prints out all command-line parameters."""
+    try:
+        from IPython.utils.PyColorize import Parser
+        p = Parser(style='Neutral')
+        pprint = p.format
+    except ImportError:
+        pprint = print_
     print_('Parameters:')
     for key in sorted(ARGS):
-        print_('% 14s: %s' % (key, getattr(ARGS, key)))
+        v = repr(getattr(ARGS, key))
+        print_('% 14s: ' % key, end='')
+        pprint(v)
     print_()
 
 
