@@ -32,6 +32,7 @@ from six.moves.socketserver import ThreadingMixIn
 
 from config_system import ffloat, parse_args
 from display_image import ImageWindow
+import log_utils
 import num_utils
 from num_utils import *
 from optimizers import AdamOptimizer, LBFGSOptimizer
@@ -63,18 +64,7 @@ def setup_exceptions():
     except ImportError:
         pass
 
-
-def setup_logging(name):
-    fmt = '[%(levelname)1.1s %(asctime)s.%(msecs)03d %(process)d] %(message)s'
-    datefmt = '%H:%M:%S'
-    level = logging.INFO
-    if 'ST_DEBUG' in os.environ:
-        level = logging.DEBUG
-    logging.basicConfig(level=level, format=fmt, datefmt=datefmt)
-    logging.captureWarnings(True)
-    return logging.getLogger(name)
-
-logger = setup_logging('style_transfer')
+logger = log_utils.setup_logger('style_transfer')
 
 
 def set_thread_count(threads):
@@ -136,7 +126,7 @@ class TileWorker:
         """This method runs in the new process."""
         global logger
         setup_exceptions()
-        logger = setup_logging('tile_worker')
+        logger = log_utils.setup_logger('tile_worker')
 
         if self.caffe_path is not None:
             sys.path.append(self.caffe_path + '/python')
@@ -975,7 +965,7 @@ def init_model(resp_q, caffe_path, model, weights, mean):
     """Puts the list of layer shapes into resp_q. To be run in a separate process."""
     global logger
     setup_exceptions()
-    logger = setup_logging('init_model')
+    logger = log_utils.setup_logger('init_model')
 
     if caffe_path:
         sys.path.append(caffe_path + '/python')
