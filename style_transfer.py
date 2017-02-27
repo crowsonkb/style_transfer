@@ -502,7 +502,7 @@ class CaffeModel:
                 feat = content.features[layer][:, start_[0]:end[0], start_[1]:end[1]]
                 c_grad = (self.data[layer] - feat) * \
                     content.masks[layer][start_[0]:end[0], start_[1]:end[1]]
-                loss += lw * content_weight[layer] * norm2(c_grad)
+                loss += lw * content_weight[layer] * norm2(c_grad) / np.mean(abs(c_grad))
                 axpy(lw * content_weight[layer], normalize(c_grad), self.diff[layer])
 
             def eval_s_grad(layer, style):
@@ -514,9 +514,10 @@ class CaffeModel:
                 s_grad = self._arr_pool.array_like(feat)
                 np.dot(gram_diff, feat, s_grad)
                 s_grad = s_grad.reshape((n, mh, mw))
-                s_grad *= style.masks[layer][start_[0]:end[0], start_[1]:end[1]]
-                loss += lw * style_weight[layer] * norm2(gram_diff) / len(self.styles) * \
-                    np.mean(style.masks[layer][start_[0]:end[0], start_[1]:end[1]]) / 2
+                mask = style.masks[layer][start_[0]:end[0], start_[1]:end[1]]
+                s_grad *= mask
+                loss += lw * style_weight[layer] * norm2(gram_diff) * np.mean(mask) / \
+                    (len(self.styles) * np.mean(abs(s_grad)) * 2)
                 axpy(lw * style_weight[layer] / len(self.styles),
                      normalize(s_grad), self.diff[layer])
 
@@ -528,7 +529,8 @@ class CaffeModel:
                 for style in self.styles:
                     eval_s_grad(layer, style)
             if layer in dd_layers:
-                loss -= lw * dd_weight[layer] * norm2(self.data[layer])
+                loss -= lw * dd_weight[layer] * norm2(self.data[layer]) / \
+                    np.mean(abs(self.data[layer]))
                 axpy(-lw * dd_weight[layer], normalize(self.data[layer]), self.diff[layer])
 
             # Run the model backward
@@ -726,7 +728,7 @@ class StyleTransfer:
             self.current_output = self.model.get_image(avg_img)
 
             if callback is not None:
-                callback(step=step, update_size=update_size, loss=loss / avg_img.size,
+                callback(step=step, update_size=update_size, loss=loss,
                          tv_loss=tv_loss)
 
             if self.window is not None:
