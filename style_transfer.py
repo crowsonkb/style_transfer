@@ -455,7 +455,7 @@ class CaffeModel:
         return features
 
     def preprocess_images(self, pool, content_images, style_images, content_layers, style_layers,
-                          tile_size=512):
+                          tile_size=512, roll=None):
         """Performs preprocessing tasks on the input images."""
         # Construct list of layers to visit during the backward pass
         layers = []
@@ -464,23 +464,28 @@ class CaffeModel:
                 layers.append(layer)
 
         # Prepare Gram matrices from style images
-        print_('Preprocessing the style image(s)...')
+        if roll is None:
+            print_('Preprocessing the style image(s)...')
         for image in style_images:
             grams = {}
             self.set_image(image)
+            roll2(self.img, roll)
             feats = self.prepare_features(pool, style_layers, tile_size, passes=1)
             for layer in feats:
                 grams[layer] = gram_matrix(feats[layer])
             self.styles.append(StyleData(grams))
 
         # Prepare feature maps from content image
-        for image in content_images:
+        if roll is None:
             print_('Preprocessing the content image(s)...')
+            n = 10
+        else:
+            n = 1
+        for image in content_images:
             self.set_image(image)
-            feats = self.prepare_features(pool, content_layers, tile_size)
+            roll2(self.img, roll)
+            feats = self.prepare_features(pool, content_layers, tile_size, passes=n)
             self.contents.append(ContentData(feats))
-
-        return layers
 
     def eval_sc_grad_tile(self, img, start, layers, content_layers, style_layers, dd_layers,
                           layer_weights, content_weight, style_weight, dd_weight):
@@ -682,8 +687,14 @@ class StyleTransfer:
         dd_layers, dd_weight = self.parse_weights(ARGS.dd_layers, ARGS.dd_weight)
 
         self.model.contents, self.model.styles = [], []
-        layers = self.model.preprocess_images(
-            self.pool, content_images, style_images, content_layers, style_layers, ARGS.tile_size)
+        if ARGS.jitter:
+            self.model.preprocess_images(self.pool, [], style_images, [], style_layers,
+                                         ARGS.tile_size)
+
+        else:
+            self.model.preprocess_images(
+                self.pool, content_images, style_images, content_layers, style_layers,
+                ARGS.tile_size)
         self.pool.set_contents_and_styles(self.model.contents, self.model.styles)
         self.model.img = params
 
@@ -697,19 +708,33 @@ class StyleTransfer:
                                 content_v=self.model.img.shape[2])
 
             # Forward jitter
-            jitter_scale, _ = self.model.layer_info([l for l in layers if l in content_layers][0])
+            jitter_scale, _ = self.model.layer_info(
+                [l for l in reversed(self.model.layers()) if l in content_layers][0])
+            if ARGS.jitter:
+                jitter_scale = 1
+                self.model.contents = []
             img_size = np.array(self.model.img.shape[-2:])
             xy = np.int32(np.random.uniform(-0.5, 0.5, size=2) * img_size) // jitter_scale
             self.model.roll(xy, jitter_scale=jitter_scale)
             self.optimizer.roll(xy * jitter_scale)
 
+            xy_ = xy
+            if ARGS.jitter:
+                self.model.preprocess_images(self.pool, content_images, [], content_layers, [],
+                                             ARGS.tile_size, roll=xy)
+                self.model.img = params
+                self.pool.set_contents_and_styles(self.model.contents, self.model.styles)
+                xy_ = np.asarray((0, 0))
+
             # In-place gradient descent update
-            args = (self.pool, xy * jitter_scale, content_layers, style_layers, dd_layers,
+            args = (self.pool, xy_ * jitter_scale, content_layers, style_layers, dd_layers,
                     self.layer_weights, content_weight, style_weight, dd_weight, ARGS.tile_size)
             avg_img, loss = self.optimizer.update(partial(self.eval_loss_and_grad,
                                                           sc_grad_args=args))
 
             # Backward jitter
+            if ARGS.jitter:
+                self.model.contents = []
             self.model.roll(-xy, jitter_scale=jitter_scale)
             self.optimizer.roll(-xy * jitter_scale)
 

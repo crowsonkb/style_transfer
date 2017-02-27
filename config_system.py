@@ -117,6 +117,8 @@ def parse_args(state_obj=None):
         '--save-every', metavar='N', type=int, default=0, help='save the image every n steps')
     parser.add_argument(
         '--seed', type=int, default=0, help='the random seed')
+    parser.add_argument('--jitter', action='store_true',
+                        help='use slower but higher quality translation-invariant rendering')
 
     args = vars(parser.parse_args())
     args.update(eval_config(args['config']))

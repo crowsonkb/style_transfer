@@ -127,7 +127,7 @@ def roll_by_1(arr, shift, axis):
 
 def roll2(arr, xy):
     """Translates an array in-place by the shift xy, wrapping at the edges."""
-    if (xy == 0).all():
+    if xy is None or (xy[0] == 0 and xy[1] == 0):
         return arr
     arr[:] = np.roll(np.roll(arr, xy[0], -1), xy[1], -2)
     return arr
