@@ -10,6 +10,7 @@ from __future__ import division
 
 from argparse import Namespace
 from collections import namedtuple, OrderedDict
+import csv
 from datetime import datetime
 from functools import partial
 import io
@@ -76,6 +77,42 @@ try:
     set_thread_count(1)
 except ImportError:
     pass
+
+
+class StatLogger:
+    """Collects per-iteration statistics to be written to a CSV file on exit."""
+    def __init__(self):
+        self.lock = CTX.Lock()
+        self.stats = []
+        self.start_time = None
+
+    def update_current_it(self, **kwargs):
+        with self.lock:
+            self.stats[-1].update(kwargs)
+
+    def update_new_it(self, **kwargs):
+        with self.lock:
+            if self.start_time is None:
+                self.start_time = timer()
+            self.stats.append(kwargs)
+            self.stats[-1]['iteration'] = len(self.stats) - 1
+            self.stats[-1]['time'] = timer() - self.start_time
+
+    def dump(self):
+        with self.lock, open(RUN+'_log.csv', 'w', newline='') as f:
+            fields = ['iteration', 'scale', 'step', 'time']
+            for row in self.stats:
+                for key in row:
+                    if key not in fields:
+                        fields.append(key)
+            writer = csv.DictWriter(f, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(self.stats)
+
+    def __del__(self):
+        self.dump()
+
+STATS = None
 
 
 class LayerIndexer:
@@ -655,6 +692,9 @@ class StyleTransfer:
 
         for step in range(1, iterations+1):
             STATE.step = step-1
+            STATS.update_new_it(scale=STATE.scale, step=step-1,
+                                content_h=self.model.img.shape[1],
+                                content_v=self.model.img.shape[2])
 
             # Forward jitter
             jitter_scale, _ = self.model.layer_info([l for l in layers if l in content_layers][0])
@@ -681,6 +721,8 @@ class StyleTransfer:
             x_diff = avg_img - np.roll(avg_img, -1, axis=-1)
             y_diff = avg_img - np.roll(avg_img, -1, axis=-2)
             tv_loss = np.sum(x_diff**2 + y_diff**2) / avg_img.size
+
+            STATS.update_current_it(update_size=update_size, loss=loss, tv_norm=tv_loss)
 
             # Record current output
             self.current_raw = avg_img
@@ -932,7 +974,7 @@ def init_model(resp_q, caffe_path, model, weights, mean):
 
 def main():
     """CLI interface for style transfer."""
-    global ARGS, RUN
+    global ARGS, RUN, STATS
 
     start_time = timer()
     setup_exceptions()
@@ -942,6 +984,7 @@ def main():
     now = datetime.now()
     RUN = '%02d%02d%02d_%02d%02d%02d' % \
         (now.year % 100, now.month, now.day, now.hour, now.minute, now.second)
+    STATS = StatLogger()
     print_('Run %s started.\n' % RUN)
 
     if MKL_THREADS is not None:
@@ -1002,6 +1045,8 @@ def main():
             [content_image], style_images, initial_image, aux_image, callback=server.progress)
     except KeyboardInterrupt:
         print_()
+    finally:
+        STATS.dump()
 
     if transfer.current_output:
         output_image = ARGS.output_image
