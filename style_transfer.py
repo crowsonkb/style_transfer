@@ -578,7 +578,7 @@ class CaffeModel:
 
         for layer, feat in feats.items():
             scale, _ = self.layer_info(layer)
-            feats[layer][:] = roll2(feat, xy // scale)
+            roll2(feat, xy // scale)
 
         return feats
 
@@ -589,8 +589,7 @@ class CaffeModel:
             self.roll_features(content.masks, xy, jitter_scale)
         for style in self.styles:
             self.roll_features(style.masks, xy, jitter_scale)
-
-        self.img[:] = roll2(self.img, xy * jitter_scale)
+        roll2(self.img, xy * jitter_scale)
 
 
 class StyleTransfer:
@@ -697,7 +696,7 @@ class StyleTransfer:
             STATE.step = step-1
 
             # Forward jitter
-            jitter_scale, _ = self.model.layer_info([l for l in layers if l in content_layers][0])
+            jitter_scale, _ = self.model.layer_info([l for l in layers if l in layers][0])
             img_size = np.array(self.model.img.shape[-2:])
             xy = np.int32(np.random.uniform(-0.5, 0.5, size=2) * img_size) // jitter_scale
             self.model.roll(xy, jitter_scale=jitter_scale)
