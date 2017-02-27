@@ -1046,6 +1046,7 @@ def main():
     if ARGS.prompt:
         cli = prompt.Prompt()
         cli_resp = prompt.PromptResponder(cli.q)
+        cli.set_run_name(RUN)
 
     server_address = ('', ARGS.port)
     url = 'http://127.0.0.1:%d/' % ARGS.port
