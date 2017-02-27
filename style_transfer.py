@@ -1010,7 +1010,7 @@ def main():
     RUN = '%02d%02d%02d_%02d%02d%02d' % \
         (now.year % 100, now.month, now.day, now.hour, now.minute, now.second)
     STATS = StatLogger()
-    print_('Run %s started.\n' % RUN)
+    print_('Run %s started.' % RUN)
 
     if MKL_THREADS is not None:
         print_('MKL detected, %d threads maximum.' % MKL_THREADS)
@@ -1019,11 +1019,12 @@ def main():
     if ARGS.caffe_path:
         sys.path.append(ARGS.caffe_path + '/python')
 
-    print_('\nLoading %s.' % ARGS.weights)
+    print_('Loading %s.' % ARGS.weights)
     resp_q = CTX.Queue()
     CTX.Process(target=init_model,
                 args=(resp_q, ARGS.caffe_path, ARGS.model, ARGS.weights, ARGS.mean)).start()
     shapes = resp_q.get()
+    print_('Initializing %s.' % ARGS.weights)
     model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, shapes=shapes, placeholder=True)
     transfer = StyleTransfer(model)
     if ARGS.list_layers:

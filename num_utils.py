@@ -165,12 +165,16 @@ def tv_norm(x, beta=2):
     return loss, grad
 
 
-def wt_norm(x, p=1, wavelet='haar'):
+def wt_norm(x, p=1, wavelet='haar', level=np.inf):
     """Computes the wavelet denoising p-norm and its gradient. It is computed in the YUV color
     space and chroma contributes twice as strongly to the gradient as luma."""
+    filter_len = pywt.Wavelet(wavelet).dec_len
+    max_level = pywt.dwt_max_level(min(x.shape[1:]), filter_len)
+    level_ = min(level, max_level)
+
     with ThreadPoolExecutor(max_workers=3) as ex:
         x = chw_convert(x, RGB_TO_YUV)
-        coeffs = list(ex.map(partial(pywt.wavedec2, wavelet=wavelet, mode='per'), x))
+        coeffs = list(ex.map(partial(pywt.wavedec2, wavelet=wavelet, mode='per', level=level_), x))
         for i, channel in enumerate(coeffs):
             channel[0][:] = 0
             channel[-1][2][:] *= 2
