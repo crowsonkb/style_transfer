@@ -931,9 +931,11 @@ def resize_to_fit(image, size, scale_up=False):
 def print_args():
     """Prints out all command-line parameters."""
     try:
-        from IPython.utils.PyColorize import Parser
-        p = Parser(style='Neutral')
-        pprint = p.format
+        import pygments
+        from pygments.lexers import Python3Lexer
+        from pygments.formatters import TerminalFormatter
+        pprint = partial(pygments.highlight, lexer=Python3Lexer(),
+                         formatter=TerminalFormatter(bg='dark'), outfile=sys.stdout)
     except ImportError:
         pprint = print_
     print_('Parameters:')
