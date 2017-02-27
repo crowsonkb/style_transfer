@@ -23,7 +23,6 @@ import webbrowser
 
 import numpy as np
 from PIL import Image, PngImagePlugin
-from scipy.ndimage import convolve
 from shared_ndarray import SharedNDArray
 import six
 from six import print_
@@ -99,8 +98,8 @@ SCGradResponse = namedtuple('SCGradResponse', 'resp loss grad')
 SetContentsAndStyles = namedtuple('SetContentsAndStyles', 'contents styles')
 SetThreadCount = namedtuple('SetThreadCount', 'threads')
 
-ContentData = namedtuple('ContentData', 'features masks')
-StyleData = namedtuple('StyleData', 'grams masks')
+ContentData = namedtuple('ContentData', 'features')
+StyleData = namedtuple('StyleData', 'grams')
 
 
 class TileWorker:
@@ -182,15 +181,11 @@ class TileWorker:
             for content in req.contents:
                 features = \
                     {layer: content.features[layer].array.copy() for layer in content.features}
-                masks = \
-                    {layer: content.masks[layer].array.copy() for layer in content.masks}
-                self.model.contents.append(ContentData(features, masks))
+                self.model.contents.append(ContentData(features))
             for style in req.styles:
                 grams = \
                     {layer: style.grams[layer].array.copy() for layer in style.grams}
-                masks = \
-                    {layer: style.masks[layer].array.copy() for layer in style.masks}
-                self.model.styles.append(StyleData(grams, masks))
+                self.model.styles.append(StyleData(grams))
             self.resp_q.put(())
 
         if isinstance(req, SetThreadCount):
@@ -253,16 +248,12 @@ class TileWorkerPool:
             for content in contents:
                 features_shm = {layer: SharedNDArray.copy(content.features[layer])
                                 for layer in content.features}
-                masks_shm = {layer: SharedNDArray.copy(content.masks[layer])
-                             for layer in content.masks}
-                content_shms.append(ContentData(features_shm, masks_shm))
+                content_shms.append(ContentData(features_shm))
 
             for style in styles:
                 grams_shm = {layer: SharedNDArray.copy(style.grams[layer])
                              for layer in style.grams}
-                masks_shm = {layer: SharedNDArray.copy(style.masks[layer])
-                             for layer in style.masks}
-                style_shms.append(StyleData(grams_shm, masks_shm))
+                style_shms.append(StyleData(grams_shm))
 
             worker.req_q.put(SetContentsAndStyles(content_shms, style_shms))
 
@@ -271,10 +262,8 @@ class TileWorkerPool:
 
         for shms in content_shms:
             _ = [shm.unlink() for shm in shms.features.values()]
-            _ = [shm.unlink() for shm in shms.masks.values()]
         for shms in style_shms:
             _ = [shm.unlink() for shm in shms.grams.values()]
-            _ = [shm.unlink() for shm in shms.masks.values()]
 
     def set_thread_count(self, threads):
         """Sets the MKL thread count per worker process."""
@@ -361,27 +350,6 @@ class CaffeModel:
             return 224, self.shapes[layer][0]
         return 224 // self.shapes[layer][1], self.shapes[layer][0]
 
-    def make_layer_masks(self, mask):
-        """Returns the set of content or style masks for each layer. Requires VGG models."""
-        conv2x2 = np.float32(np.ones((2, 2))) / 4
-        conv3x3 = np.float32(np.ones((3, 3))) / 9
-        masks = {}
-
-        for layer in self.layers():
-            if layer.startswith('conv'):
-                mask = convolve(mask, conv3x3, mode='nearest')
-            if layer.startswith('pool'):
-                if mask.shape[0] % 2 == 1:
-                    mask = np.resize(mask, (mask.shape[0] + 1, mask.shape[1]))
-                    mask[-1, :] = mask[-2, :]
-                if mask.shape[1] % 2 == 1:
-                    mask = np.resize(mask, (mask.shape[0], mask.shape[1] + 1))
-                    mask[:, -1] = mask[:, -2]
-                mask = convolve(mask, conv2x2, mode='nearest')[::2, ::2]
-            masks[layer] = mask
-
-        return masks
-
     def eval_features_tile(self, img, layers):
         """Computes a single tile in a set of feature maps."""
         self.net.blobs['data'].reshape(1, 3, *img.shape[-2:])
@@ -449,7 +417,7 @@ class CaffeModel:
         return features
 
     def preprocess_images(self, pool, content_images, style_images, content_layers, style_layers,
-                          content_masks, style_masks, tile_size=512):
+                          tile_size=512):
         """Performs preprocessing tasks on the input images."""
         # Construct list of layers to visit during the backward pass
         layers = []
@@ -459,22 +427,20 @@ class CaffeModel:
 
         # Prepare Gram matrices from style images
         print_('Preprocessing the style image(s)...')
-        for image, mask in zip(style_images, style_masks):
+        for image in style_images:
             grams = {}
             self.set_image(image)
             feats = self.prepare_features(pool, style_layers, tile_size, passes=1)
             for layer in feats:
                 grams[layer] = gram_matrix(feats[layer])
-            masks = self.make_layer_masks(mask)
-            self.styles.append(StyleData(grams, masks))
+            self.styles.append(StyleData(grams))
 
         # Prepare feature maps from content image
-        for image, mask in zip(content_images, content_masks):
+        for image in content_images:
             print_('Preprocessing the content image(s)...')
             self.set_image(image)
             feats = self.prepare_features(pool, content_layers, tile_size)
-            masks = self.make_layer_masks(mask)
-            self.contents.append(ContentData(feats, masks))
+            self.contents.append(ContentData(feats))
 
         return layers
 
@@ -500,8 +466,7 @@ class CaffeModel:
             def eval_c_grad(layer, content):
                 nonlocal loss
                 feat = content.features[layer][:, start_[0]:end[0], start_[1]:end[1]]
-                c_grad = (self.data[layer] - feat) * \
-                    content.masks[layer][start_[0]:end[0], start_[1]:end[1]]
+                c_grad = self.data[layer] - feat
                 loss += lw * content_weight[layer] * norm2(c_grad) / np.mean(abs(c_grad))
                 axpy(lw * content_weight[layer], normalize(c_grad), self.diff[layer])
 
@@ -514,12 +479,10 @@ class CaffeModel:
                 s_grad = self._arr_pool.array_like(feat)
                 np.dot(gram_diff, feat, s_grad)
                 s_grad = s_grad.reshape((n, mh, mw))
-                mask = style.masks[layer][start_[0]:end[0], start_[1]:end[1]]
-                s_grad *= mask
-                loss += lw * style_weight[layer] * norm2(gram_diff) * np.mean(mask) / \
-                    (len(self.styles) * np.mean(abs(s_grad)) * 2)
-                axpy(lw * style_weight[layer] / len(self.styles),
-                     normalize(s_grad), self.diff[layer])
+                loss_denom = 2 * len(self.styles) * np.mean(abs(s_grad))
+                loss += lw * style_weight[layer] * norm2(gram_diff) / loss_denom
+                axpy(lw * style_weight[layer] / len(self.styles), normalize(s_grad),
+                     self.diff[layer])
 
             # Compute the content and style gradients
             if layer in content_layers:
@@ -585,12 +548,9 @@ class CaffeModel:
         return feats
 
     def roll(self, xy, jitter_scale=32):
-        """Rolls image, feature maps, and layer masks."""
+        """Rolls the image, feature maps."""
         for content in self.contents:
             self.roll_features(content.features, xy, jitter_scale)
-            self.roll_features(content.masks, xy, jitter_scale)
-        for style in self.styles:
-            self.roll_features(style.masks, xy, jitter_scale)
         roll2(self.img, xy * jitter_scale)
 
 
@@ -668,8 +628,7 @@ class StyleTransfer:
         self.model.img = old_img
         return loss, grad
 
-    def transfer(self, iterations, params, content_images, style_images,
-                 content_masks, style_masks, callback=None):
+    def transfer(self, iterations, params, content_images, style_images, callback=None):
         """Performs style transfer from style_image to content_image."""
         if 'scale' not in STATE:
             STATE.scale = 0
@@ -686,8 +645,7 @@ class StyleTransfer:
 
         self.model.contents, self.model.styles = [], []
         layers = self.model.preprocess_images(
-            self.pool, content_images, style_images, content_layers, style_layers,
-            content_masks, style_masks, ARGS.tile_size)
+            self.pool, content_images, style_images, content_layers, style_layers, ARGS.tile_size)
         self.pool.set_contents_and_styles(self.model.contents, self.model.styles)
         self.model.img = params
 
@@ -698,7 +656,7 @@ class StyleTransfer:
             STATE.step = step-1
 
             # Forward jitter
-            jitter_scale, _ = self.model.layer_info([l for l in layers if l in layers][0])
+            jitter_scale, _ = self.model.layer_info([l for l in layers if l in content_layers][0])
             img_size = np.array(self.model.img.shape[-2:])
             xy = np.int32(np.random.uniform(-0.5, 0.5, size=2) * img_size) // jitter_scale
             self.model.roll(xy, jitter_scale=jitter_scale)
@@ -737,7 +695,7 @@ class StyleTransfer:
         return self.current_output
 
     def transfer_multiscale(self, content_images, style_images, initial_image, aux_image,
-                            content_masks, style_masks, callback=None, **kwargs):
+                            callback=None, **kwargs):
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
         output_raw = None
@@ -759,29 +717,19 @@ class StyleTransfer:
 
         for i, size in enumerate(reversed(sizes)):
             content_scaled = []
-            content_masks_scaled = []
             for image in content_images:
                 if image.size != content_images[0].size:
                     raise ValueError('All of the content images must be the same size')
                 content_scaled.append(resize_to_fit(image, size, scale_up=True))
                 w, h = content_scaled[0].size
-                content_masks_scaled.append(np.ones((h, w), np.float32))
             print_('\nScale %d, image size %dx%d.\n' % (i+1, w, h))
             style_scaled = []
-            style_masks_scaled = []
             for image in style_images:
                 if ARGS.style_scale >= 32:
                     style_scaled.append(resize_to_fit(image, ARGS.style_scale, scale_up=True))
                 else:
                     style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale),
                                                       scale_up=ARGS.style_scale_up))
-            for arr in style_masks:
-                style_masks_scaled.append(np.maximum(0, resize(arr, (h, w)) / 255))
-            if not style_masks:
-                for _ in style_scaled:
-                    style_masks_scaled.append(np.ones((h, w), np.float32))
-            elif len(style_masks) != len(style_scaled):
-                raise ValueError('There must be the same number of style images and masks')
             if aux_image:
                 aux_scaled = aux_image.resize(content_scaled[0].size, Image.LANCZOS)
                 self.aux_image = self.model.pil_to_image(aux_scaled)
@@ -814,8 +762,7 @@ class StyleTransfer:
             params = self.model.img
             iters_i = ARGS.iterations[min(i, len(ARGS.iterations)-1)]
             output_image = self.transfer(iters_i, params, content_scaled, style_scaled,
-                                         content_masks_scaled, style_masks_scaled, callback,
-                                         **kwargs)
+                                         callback, **kwargs)
             output_raw = self.current_raw
 
         return output_image
@@ -1009,7 +956,7 @@ def main():
         sys.exit(0)
 
     content_image = Image.open(ARGS.content_image).convert('RGB')
-    style_images, style_masks = [], []
+    style_images = []
     for image in ARGS.style_images:
         style_images.append(Image.open(image).convert('RGB'))
     initial_image, aux_image = None, None
@@ -1017,8 +964,6 @@ def main():
         initial_image = Image.open(ARGS.init_image).convert('RGB')
     if ARGS.aux_image:
         aux_image = Image.open(ARGS.aux_image).convert('RGB')
-    for image in ARGS.style_masks:
-        style_masks.append(np.float32(Image.open(image).convert('L')) / 255)
 
     server_address = ('', ARGS.port)
     url = 'http://127.0.0.1:%d/' % ARGS.port
@@ -1039,8 +984,7 @@ def main():
     np.random.seed(ARGS.seed)
     try:
         transfer.transfer_multiscale(
-            [content_image], style_images, initial_image, aux_image, [], style_masks,
-            callback=server.progress)
+            [content_image], style_images, initial_image, aux_image, callback=server.progress)
     except KeyboardInterrupt:
         print_()
 
