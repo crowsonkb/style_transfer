@@ -101,7 +101,7 @@ def setup_logger(name=None, level=None, formatter_opts=None):
         formatter_opts = {}
     logging.captureWarnings(True)
     logger = logging.getLogger(name)
-    if 'ST_DEBUG' in os.environ:
+    if 'DEBUG' in os.environ:
         level = logging.DEBUG
     elif level is None:
         level = logging.INFO
