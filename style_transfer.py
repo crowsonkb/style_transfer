@@ -33,6 +33,7 @@ from config_system import ffloat, parse_args
 import log_utils
 from num_utils import axpy, gram_matrix, norm2, normalize, p_norm, resize, roll2, tv_norm, wt_norm
 from optimizers import AdamOptimizer, LBFGSOptimizer
+import prompt
 
 
 ARGS = None
@@ -686,8 +687,10 @@ class StyleTransfer:
             self.current_output = self.model.get_image(avg_img)
 
             if callback is not None:
-                callback(step=step, update_size=update_size, loss=loss,
-                         tv_loss=tv_loss)
+                msg = callback(step=step, update_size=update_size, loss=loss,
+                               tv_loss=tv_loss)
+                if isinstance(msg, prompt.Skip):
+                    break
 
             if self.window is not None:
                 self.window.display(self.current_output)
@@ -777,11 +780,13 @@ class Progress:
     loss = np.nan
     tv_loss = np.nan
 
-    def __init__(self, transfer, url=None, steps=-1, save_every=0):
+    def __init__(self, transfer, url=None, steps=-1, save_every=0, cli=None, callback=None):
         self.transfer = transfer
         self.url = url
         self.steps = 0
         self.save_every = save_every
+        self.cli = cli
+        self.callback = callback
 
     def __call__(self, step=-1, update_size=np.nan, loss=np.nan, tv_loss=np.nan):
         this_t = timer()
@@ -794,11 +799,15 @@ class Progress:
         if self.step == 1:
             if self.url:
                 webbrowser.open(self.url)
+            if self.cli:
+                self.cli.start()
         else:
             self.t = this_t - self.prev_t
         print_('Step %d, time: %.2f s, update: %.2f, loss: %.3e, tv: %.1f' %
                (step, self.t, update_size, loss, tv_loss), flush=True)
         self.prev_t = this_t
+        if self.callback:
+            return self.callback()
 
     def set_steps(self, steps):
         self.steps = steps
@@ -965,6 +974,11 @@ def main():
     if ARGS.aux_image:
         aux_image = Image.open(ARGS.aux_image).convert('RGB')
 
+    cli, cli_resp = None, None
+    if ARGS.prompt:
+        cli = prompt.Prompt()
+        cli_resp = prompt.PromptResponder(cli.q)
+
     server_address = ('', ARGS.port)
     url = 'http://127.0.0.1:%d/' % ARGS.port
     server = ProgressServer(server_address, ProgressHandler)
@@ -975,7 +989,8 @@ def main():
         progress_args['url'] = url
     steps = 0
     server.progress = Progress(
-        transfer, steps=steps, save_every=ARGS.save_every, **progress_args)
+        transfer, steps=steps, save_every=ARGS.save_every, cli=cli, callback=cli_resp,
+        **progress_args)
     th = threading.Thread(target=server.serve_forever)
     th.daemon = True
     th.start()

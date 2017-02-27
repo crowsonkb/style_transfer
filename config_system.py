@@ -102,6 +102,7 @@ def parse_args(state_obj=None):
         help='the display method to use')
     parser.add_argument(
         '--hidpi', action='store_true', help='display the image at 2x scale in the browser')
+    parser.add_argument('--prompt', action='store_true', help='enable the experimental prompt')
     parser.add_argument(
         '--model', default='vgg19.prototxt',
         help='the Caffe deploy.prototxt for the model to use')
