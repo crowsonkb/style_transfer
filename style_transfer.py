@@ -4,6 +4,7 @@
 (http://arxiv.org/abs/1508.06576)."""
 
 # pylint: disable=invalid-name, too-many-arguments, too-many-instance-attributes, too-many-locals
+# pylint: disable=global-statement
 
 from __future__ import division
 
@@ -13,7 +14,6 @@ from datetime import datetime
 from functools import partial
 import io
 import json
-import logging
 import multiprocessing as mp
 import os
 import sys
@@ -32,8 +32,7 @@ from six.moves.socketserver import ThreadingMixIn
 
 from config_system import ffloat, parse_args
 import log_utils
-import num_utils
-from num_utils import *
+from num_utils import axpy, gram_matrix, norm2, normalize, p_norm, resize, roll2, tv_norm, wt_norm
 from optimizers import AdamOptimizer, LBFGSOptimizer
 
 
@@ -270,12 +269,12 @@ class TileWorkerPool:
         for worker in self.workers:
             self.resp_q.get()
 
-        for shm in content_shms:
-            _ = [shm.unlink() for shm in shm.features.values()]
-            _ = [shm.unlink() for shm in shm.masks.values()]
-        for shm in style_shms:
-            _ = [shm.unlink() for shm in shm.grams.values()]
-            _ = [shm.unlink() for shm in shm.masks.values()]
+        for shms in content_shms:
+            _ = [shm.unlink() for shm in shms.features.values()]
+            _ = [shm.unlink() for shm in shms.masks.values()]
+        for shms in style_shms:
+            _ = [shm.unlink() for shm in shms.grams.values()]
+            _ = [shm.unlink() for shm in shms.masks.values()]
 
     def set_thread_count(self, threads):
         """Sets the MKL thread count per worker process."""
@@ -613,7 +612,6 @@ class StyleTransfer:
             from display_image import ImageWindow
             self.window = ImageWindow()
 
-
     @staticmethod
     def parse_weights(args, master_weight):
         """Parses a list of name:number pairs into a normalized dict of weights."""
@@ -715,9 +713,6 @@ class StyleTransfer:
             self.model.roll(-xy, jitter_scale=jitter_scale)
             self.optimizer.roll(-xy * jitter_scale)
 
-            # Compute image size statistic
-            img_size = np.mean(abs(avg_img))
-
             # Compute update size statistic
             update_size = np.mean(abs(avg_img - old_img))
             old_img[:] = avg_img
@@ -781,7 +776,7 @@ class StyleTransfer:
                                                       scale_up=ARGS.style_scale_up))
             for arr in style_masks:
                 style_masks_scaled.append(np.maximum(0, resize(arr, (h, w)) / 255))
-            if len(style_masks) == 0:
+            if style_masks:
                 for _ in style_scaled:
                     style_masks_scaled.append(np.ones((h, w), np.float32))
             elif len(style_masks) != len(style_scaled):
@@ -1054,7 +1049,6 @@ def main():
         png_info = PngImagePlugin.PngInfo()
         png_info.add_itxt('Comment', get_image_comment())
         transfer.current_output.save(output_image, pnginfo=png_info)
-        a, _, _ = output_image.rpartition('.')
     time_spent = timer() - start_time
     print_('Run %s ending after %dm %.3fs.' % (RUN, time_spent // 60, time_spent % 60))
 
