@@ -49,7 +49,7 @@ def normalize(arr):
     return arr
 
 
-def resize(a, hw, method=Image.LANCZOS):
+def resize(a, hw, method=LANCZOS):
     """Resamples an image array in CxHxW format to a new HxW size. The interpolation is performed
     in floating point and the result dtype is numpy.float32."""
     def _resize(a, b):
