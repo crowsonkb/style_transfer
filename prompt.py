@@ -3,9 +3,10 @@ import queue
 import shlex
 import threading
 
-from prompt_toolkit import prompt
+from prompt_toolkit import CommandLineInterface
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.styles import style_from_dict
+from prompt_toolkit.shortcuts import create_eventloop, create_prompt_application
 from prompt_toolkit.token import Token
 
 Display = namedtuple('Display', 'type')
@@ -15,7 +16,6 @@ Skip = namedtuple('Skip', '')
 
 class Prompt:
     def __init__(self):
-        self.history = InMemoryHistory()
         self.q = queue.Queue()
         self.shutdown = threading.Event()
         self.thread = threading.Thread(target=self.run)
@@ -41,30 +41,38 @@ class Prompt:
     def run(self):
         style = style_from_dict({
             Token.Toolbar: '#ccc bg:#333',
-            Token.Name: '#fff bold',
+            Token.Name: '#fff bold bg:#333',
         })
 
-        while not self.shutdown.is_set():
-            try:
-                text = prompt('> ', history=self.history, patch_stdout=True, style=style,
-                              get_bottom_toolbar_tokens=self.get_bottom_toolbar_tokens)
-                cmd = shlex.split(text)
-                if not cmd:
+        history = InMemoryHistory()
+        eventloop = create_eventloop()
+        app = create_prompt_application('> ', history=history, style=style,
+                                        get_bottom_toolbar_tokens=self.get_bottom_toolbar_tokens)
+        cli = CommandLineInterface(app, eventloop)
+
+        with cli.patch_stdout_context(raw=True):
+            while not self.shutdown.is_set():
+                try:
+                    cli.run()
+                    cmd = shlex.split(cli.return_value().text)
+                    app.buffer.reset(append_to_history=True)
+
+                    if not cmd:
+                        continue
+                    elif cmd[0] in ('exit', 'quit'):
+                        self.q.put(Exit())
+                        return
+                    elif cmd[0] == 'help':
+                        print('Help text forthcoming.')
+                    elif cmd[0] == 'skip':
+                        self.q.put(Skip())
+                    else:
+                        print('Unknown command. Try \'help\'.')
+                except KeyboardInterrupt:
                     continue
-                elif cmd[0] in ('exit', 'quit'):
+                except EOFError:
                     self.q.put(Exit())
                     return
-                elif cmd[0] == 'help':
-                    print('Help text forthcoming.')
-                elif cmd[0] == 'skip':
-                    self.q.put(Skip())
-                else:
-                    print('Unknown command. Try \'help\'.')
-            except KeyboardInterrupt:
-                continue
-            except EOFError:
-                self.q.put(Exit())
-                return
 
 
 class PromptResponder:

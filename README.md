@@ -5,7 +5,7 @@ Data-parallel image stylization using Caffe. Implements [A Neural Algorithm of A
 Dependencies:
 - [Python](https://www.python.org) 2.7 or 3.5+
 - [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 2.7 or 3.5+
-- Python packages [matplotlib](http://matplotlib.org), [numpy](http://www.numpy.org), [Pillow](https://python-pillow.org), [PyWavelets](https://pywavelets.readthedocs.io/en/latest/), [scipy](http://www.scipy.org), [shared_ndarray](https://github.com/crowsonkb/shared_ndarray), [six](https://pythonhosted.org/six/)
+- Python packages [matplotlib](http://matplotlib.org), [numpy](http://www.numpy.org), [Pillow](https://python-pillow.org), [scipy](http://www.scipy.org), [shared_ndarray](https://github.com/crowsonkb/shared_ndarray), [six](https://pythonhosted.org/six/)
 
 The current preferred Python distribution for `style_transfer` is [Anaconda](https://www.continuum.io/downloads) (Python 3.6 version). `style_transfer` will run faster with Anaconda than with other Python distributions due to its inclusion of the [MKL](https://software.intel.com/en-us/intel-mkl) BLAS (mathematics) library. In addition, if you are running Caffe without a GPU, `style_transfer` will run a great deal faster if compiled with MKL (`BLAS := mkl` in `Makefile.config`).
 
@@ -20,7 +20,6 @@ Command line arguments are documented in detail in the work-in-progress [paramet
 - Multi-GPU support (ex: `--devices 0 1 2 3`). Four GPUs, for instance, can process four tiles at a time.
 - Can perform simultaneous Deep Dream and image stylization.
 - L-BFGS [2] and Adam (gradient descent) [4] optimizers.
-- In addition to the ordinary total variation denoiser [3], supports high-quality wavelet-based denoising.
 
 ## Examples
 

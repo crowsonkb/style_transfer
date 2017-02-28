@@ -32,7 +32,7 @@ from six.moves.socketserver import ThreadingMixIn
 
 from config_system import ffloat, parse_args
 import log_utils
-from num_utils import axpy, gram_matrix, norm2, normalize, p_norm, resize, roll2, tv_norm, wt_norm
+from num_utils import axpy, gram_matrix, norm2, normalize, p_norm, resize, roll2, tv_norm
 from optimizers import AdamOptimizer, LBFGSOptimizer
 import prompt
 
@@ -401,8 +401,9 @@ class CaffeModel:
         img_size = np.array(self.img.shape[-2:])
         ntiles = (img_size-1) // tile_size + 1
         tile_size = img_size // ntiles
-        print_('Using %dx%d tiles of size %dx%d.' %
-               (ntiles[1], ntiles[0], tile_size[1], tile_size[0]))
+        if np.prod(ntiles) > 1:
+            print_('Using %dx%d tiles of size %dx%d.' %
+                   (ntiles[1], ntiles[0], tile_size[1], tile_size[0]))
         features = {}
         for layer in layers:
             scale, channels = self.layer_info(layer)
@@ -640,32 +641,21 @@ class StyleTransfer:
 
         # Compute style+content gradient
         loss, grad = self.model.eval_sc_grad(*sc_grad_args)
-        logger.debug('sc_grad norm: %g', np.mean(abs(grad)))
 
-        # Compute denoiser gradient
-        if ARGS.denoiser == 'tv':
-            tv_loss, tv_grad = tv_norm(self.model.img / 127.5, beta=ARGS.tv_power)
-            loss += lw * ARGS.tv_weight * tv_loss
-            logger.debug('tv_grad norm: %g', np.mean(abs(tv_grad)) * lw * ARGS.tv_weight)
-            axpy(lw * ARGS.tv_weight, tv_grad, grad)
-        elif ARGS.denoiser == 'wavelet':
-            wt_loss, wt_grad = wt_norm(self.model.img / 127.5,
-                                       p=ARGS.wt_power, wavelet=ARGS.wt_type)
-            loss += lw * ARGS.wt_weight * wt_loss
-            logger.debug('wt_grad norm: %g', np.mean(abs(wt_grad)) * lw * ARGS.wt_weight)
-            axpy(lw * ARGS.wt_weight, wt_grad, grad)
+        # Compute total variation gradient
+        tv_loss, tv_grad = tv_norm(self.model.img / 127.5, beta=ARGS.tv_power)
+        loss += lw * ARGS.tv_weight * tv_loss
+        axpy(lw * ARGS.tv_weight, tv_grad, grad)
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
         p_loss, p_grad = p_norm((self.model.img + self.model.mean - 127.5) / 127.5, p=ARGS.p_power)
         loss += lw * ARGS.p_weight * p_loss
-        logger.debug('p_grad norm:  %g', np.mean(abs(p_grad)) * lw * ARGS.p_weight)
         axpy(lw * ARGS.p_weight, p_grad, grad)
 
         # Compute auxiliary image gradient
         if self.aux_image is not None:
             aux_grad = (self.model.img - self.aux_image) / 127.5
             loss += lw * ARGS.aux_weight * norm2(aux_grad)
-            logger.debug('aux_grad norm: %g', np.mean(abs(aux_grad)) * lw * ARGS.aux_weight)
             axpy(lw * ARGS.aux_weight, aux_grad, grad)
 
         self.model.img = old_img
@@ -745,7 +735,7 @@ class StyleTransfer:
             # Compute total variation statistic
             x_diff = avg_img - np.roll(avg_img, -1, axis=-1)
             y_diff = avg_img - np.roll(avg_img, -1, axis=-2)
-            tv_loss = np.sum(x_diff**2 + y_diff**2) / avg_img.size
+            tv_loss = np.mean(x_diff**2 + y_diff**2)
 
             STATS.update_current_it(update_size=update_size, loss=loss, tv_norm=tv_loss)
 
@@ -754,7 +744,7 @@ class StyleTransfer:
             self.current_output = self.model.get_image(avg_img)
 
             if callback is not None:
-                msg = callback(step=step, update_size=update_size, loss=loss,
+                msg = callback(step=step, update_size=update_size, loss=loss / avg_img.size,
                                tv_loss=tv_loss)
                 if isinstance(msg, prompt.Skip):
                     break
@@ -870,7 +860,7 @@ class Progress:
                 self.cli.start()
         else:
             self.t = this_t - self.prev_t
-        print_('Step %d, time: %.2f s, update: %.2f, loss: %.3e, tv: %.1f' %
+        print_('Step %d, time: %.2f s, update: %.2f, loss: %.3f, tv: %.1f' %
                (step, self.t, update_size, loss, tv_loss), flush=True)
         self.prev_t = this_t
         if self.callback:
@@ -899,7 +889,7 @@ class ProgressHandler(BaseHTTPRequestHandler):
     </style>
     <h1>Style transfer</h1>
     <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
-    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss).3e,
+    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss).3f,
     tv: %(tv_loss).1f
     """
 
@@ -1010,7 +1000,7 @@ def main():
     RUN = '%02d%02d%02d_%02d%02d%02d' % \
         (now.year % 100, now.month, now.day, now.hour, now.minute, now.second)
     STATS = StatLogger()
-    print_('Run %s started.\n' % RUN)
+    print_('Run %s started.' % RUN)
 
     if MKL_THREADS is not None:
         print_('MKL detected, %d threads maximum.' % MKL_THREADS)
@@ -1019,11 +1009,12 @@ def main():
     if ARGS.caffe_path:
         sys.path.append(ARGS.caffe_path + '/python')
 
-    print_('\nLoading %s.' % ARGS.weights)
+    print_('Loading %s.' % ARGS.weights)
     resp_q = CTX.Queue()
     CTX.Process(target=init_model,
                 args=(resp_q, ARGS.caffe_path, ARGS.model, ARGS.weights, ARGS.mean)).start()
     shapes = resp_q.get()
+    print_('Initializing %s.' % ARGS.weights)
     model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, shapes=shapes, placeholder=True)
     transfer = StyleTransfer(model)
     if ARGS.list_layers:

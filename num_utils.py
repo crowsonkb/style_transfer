@@ -1,16 +1,10 @@
 """Numerical utilities."""
 
 from concurrent.futures import ThreadPoolExecutor
-import ctypes
-import ctypes.util
-from ctypes import c_float, c_int32
-from functools import partial
 
 import numpy as np
-import numpy.ctypeslib as npct
 from PIL import Image
 from PIL.Image import NEAREST, BILINEAR, BICUBIC, LANCZOS  # pylint: disable=unused-import
-import pywt
 from scipy.linalg import blas
 
 # Machine epsilon for float32
@@ -30,33 +24,6 @@ def axpy(a, x, y):
     if y is not y_:
         y[:] = y_
     return y
-
-
-ROW_MAJOR, COL_MAJOR = 101, 102
-UPPER, LOWER = 121, 122
-LEFT, RIGHT = 141, 142
-
-c_float_arr2d = npct.ndpointer(np.float32, ndim=2, flags='C')
-
-try:
-    mkl = ctypes.cdll.LoadLibrary(ctypes.util.find_library('mkl_rt'))
-    mkl.cblas_ssymm.restype = None
-    mkl.cblas_ssymm.argtypes = [
-        c_int32, c_int32, c_int32, c_int32, c_int32, c_float, c_float_arr2d, c_int32,
-        c_float_arr2d, c_int32, c_float, c_float_arr2d, c_int32]
-
-    def symm(a, b, c=None, alpha=1, beta=0, side=LEFT, uplo=UPPER):
-        """Wraps MKL's cblas_ssymm() scalar-symmetric matrix-matrix product. If side is LEFT, sets
-        C = alpha * A @ B + beta * C; if RIGHT, sets C = alpha * B @ A + beta * C. See
-        https://software.intel.com/en-us/node/520779.
-        """
-        if c is None:
-            c = np.zeros_like(b)
-        mkl.cblas_ssymm(ROW_MAJOR, side, uplo, c.shape[0], c.shape[1],
-                        alpha, a, a.shape[0], b, c.shape[1], beta, c, c.shape[1])
-        return c
-except (AttributeError, OSError):
-    pass
 
 
 def norm2(arr):
@@ -141,15 +108,6 @@ def gram_matrix(feat):
     # return blas.ssyrk(1 / feat.size, feat)
 
 
-YUV_TO_RGB = np.float32([[1, 0, 1.13983], [1, -0.39465, -0.5806], [1, 2.03211, 0]])
-RGB_TO_YUV = np.linalg.inv(YUV_TO_RGB)
-
-
-def chw_convert(img, mat):
-    """Given a CxHxW format image and a 3x3 matrix, performs colorspace conversion on the image."""
-    return np.dot(mat, img.reshape((img.shape[0], -1))).reshape(img.shape)
-
-
 def tv_norm(x, beta=2):
     """Computes the total variation norm and its gradient. From jcjohnson/cnn-vis and [3]."""
     x_diff = x - roll_by_1(x.copy(), -1, axis=2)
@@ -165,40 +123,27 @@ def tv_norm(x, beta=2):
     return loss, grad
 
 
-def wt_norm(x, p=1, wavelet='haar'):
-    """Computes the wavelet denoising p-norm and its gradient. It is computed in the YUV color
-    space and chroma contributes twice as strongly to the gradient as luma."""
-    with ThreadPoolExecutor(max_workers=3) as ex:
-        x = chw_convert(x, RGB_TO_YUV)
-        coeffs = list(ex.map(partial(pywt.wavedec2, wavelet=wavelet, mode='per'), x))
-        for i, channel in enumerate(coeffs):
-            channel[0][:] = 0
-            channel[-1][2][:] *= 2
-            if i > 0:
-                for level in channel[1:]:
-                    for sb in level:
-                        sb *= 2
-        inv = np.stack(ex.map(partial(pywt.waverec2, wavelet=wavelet, mode='per'), coeffs))
-        if inv.shape != x.shape:
-            inv = inv[:, :x.shape[1], :x.shape[2]]
-        return p_norm(chw_convert(inv, YUV_TO_RGB), p)
-
-
 class EWMA:
     """An exponentially weighted moving average with initialization bias correction."""
-    def __init__(self, smoothing, initial_value=0):
-        self.smoothing = smoothing
-        self.t = 0
-        self.value = initial_value
+    def __init__(self, beta, shape, dtype=np.float32, correct_bias=True):
+        self.beta = beta
+        self.fac = 0
+        if correct_bias:
+            self.fac = 1
+        self.value = np.zeros(shape, dtype)
 
-    def get(self, bias_correction=True):
+    def get(self):
         """Gets the current value of the running average."""
-        if self.t == 0 or not bias_correction:
-            return self.value
-        return self.value / (1 - self.smoothing**self.t)
+        return self.value / (1 - self.fac)
+
+    def get_est(self, datum):
+        """Estimates the next value of the running average given a datum, but does not update
+        the average."""
+        est_value = self.beta * self.value + (1 - self.beta) * datum
+        return est_value / (1 - self.fac * self.beta)
 
     def update(self, datum):
         """Updates the running average with a new observation."""
-        self.t += 1
-        self.value *= self.smoothing
-        self.value += (1 - self.smoothing) * datum
+        self.fac *= self.beta
+        self.value *= self.beta
+        self.value += (1 - self.beta) * datum
