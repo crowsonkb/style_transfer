@@ -33,7 +33,7 @@ from six.moves.socketserver import ThreadingMixIn
 
 from config_system import ffloat, parse_args
 import log_utils
-from num_utils import axpy, gram_matrix, norm2, normalize, p_norm, resize, roll2, tv_norm
+from num_utils import axpy, gram_matrix, norm2, normalize, p_norm, resize, roll2, tv_norm, swt_norm
 from optimizers import AdamOptimizer, LBFGSOptimizer
 import prompt
 
@@ -647,6 +647,11 @@ class StyleTransfer:
         tv_loss, tv_grad = tv_norm(self.model.img / 127.5, beta=ARGS.tv_power)
         loss += lw * ARGS.tv_weight * tv_loss
         axpy(lw * ARGS.tv_weight, tv_grad, grad)
+
+        # Compute SWT norm and gradient
+        swt_loss, swt_grad = swt_norm(self.model.img / 127.5, ARGS.swt_wavelet, ARGS.swt_level)
+        loss += lw * ARGS.swt_weight * swt_loss
+        axpy(lw * ARGS.swt_weight, swt_grad, grad)
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
         p_loss, p_grad = p_norm((self.model.img + self.model.mean - 127.5) / 127.5, p=ARGS.p_power)
