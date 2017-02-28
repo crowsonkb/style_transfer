@@ -401,8 +401,9 @@ class CaffeModel:
         img_size = np.array(self.img.shape[-2:])
         ntiles = (img_size-1) // tile_size + 1
         tile_size = img_size // ntiles
-        print_('Using %dx%d tiles of size %dx%d.' %
-               (ntiles[1], ntiles[0], tile_size[1], tile_size[0]))
+        if np.prod(ntiles) > 1:
+            print_('Using %dx%d tiles of size %dx%d.' %
+                   (ntiles[1], ntiles[0], tile_size[1], tile_size[0]))
         features = {}
         for layer in layers:
             scale, channels = self.layer_info(layer)
@@ -870,7 +871,7 @@ class Progress:
                 self.cli.start()
         else:
             self.t = this_t - self.prev_t
-        print_('Step %d, time: %.2f s, update: %.2f, loss: %.3e, tv: %.1f' %
+        print_('Step %d, time: %.2f s, update: %.2f, loss: %.4e, tv: %.1f' %
                (step, self.t, update_size, loss, tv_loss), flush=True)
         self.prev_t = this_t
         if self.callback:
@@ -899,7 +900,7 @@ class ProgressHandler(BaseHTTPRequestHandler):
     </style>
     <h1>Style transfer</h1>
     <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
-    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss).3e,
+    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss).4e,
     tv: %(tv_loss).1f
     """
 
