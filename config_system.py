@@ -72,10 +72,7 @@ def parse_args(state_obj=None):
         '--tv-power', '-tp', metavar='BETA', type=ffloat, default=2,
         help='the TV smoothing exponent')
     parser.add_argument(
-        '--wt-type', '-wt', metavar='WAVELET', default='db4', help='the wavelet type to use')
-    parser.add_argument(
-        '--wt-level', '-wl', metavar='LEVEL', default=2, type=int,
-        help='the maximum wavelet decomposition level')
+        '--wt-type', '-wt', metavar='WAVELET', default='bior2.2', help='the wavelet type to use')
     parser.add_argument(
         '--wt-weight', '-ww', type=ffloat, default=10, help='the wavelet smoothing factor')
     parser.add_argument(
