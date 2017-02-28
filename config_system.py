@@ -69,11 +69,12 @@ def parse_args(state_obj=None):
         '--tv-power', '-tp', metavar='BETA', type=ffloat, default=2,
         help='the TV smoothing exponent')
     parser.add_argument(
-        '--swt-weight', type=ffloat, default=20, help='the SWT smoothing factor')
+        '--swt-weight', '-ww', type=ffloat, default=20, help='the SWT smoothing factor')
     parser.add_argument(
-        '--swt-wavelet', default='haar', help='the SWT wavelet')
+        '--swt-wavelet', '-wt', default='haar', help='the SWT wavelet')
     parser.add_argument(
-        '--swt-level', default=1, type=int, help='the number of levels to use for decomposition')
+        '--swt-levels', '-wl', default=1, type=int,
+        help='the number of levels to use for decomposition')
     parser.add_argument(
         '--p-weight', '-pw', type=ffloat, default=2, help='the p-norm regularizer factor')
     parser.add_argument(
