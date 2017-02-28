@@ -744,8 +744,7 @@ class StyleTransfer:
             self.current_output = self.model.get_image(avg_img)
 
             if callback is not None:
-                msg = callback(step=step, update_size=update_size, loss=loss / avg_img.size,
-                               tv_loss=tv_loss)
+                msg = callback(step=step, update_size=update_size, tv_loss=tv_loss)
                 if isinstance(msg, prompt.Skip):
                     break
 
@@ -845,11 +844,10 @@ class Progress:
         self.cli = cli
         self.callback = callback
 
-    def __call__(self, step=-1, update_size=np.nan, loss=np.nan, tv_loss=np.nan):
+    def __call__(self, step=-1, update_size=np.nan, tv_loss=np.nan):
         this_t = timer()
         self.step += 1
         self.update_size = update_size
-        self.loss = loss
         self.tv_loss = tv_loss
         if self.save_every and self.step % self.save_every == 0:
             self.transfer.current_output.save(RUN + '_out_%04d.png' % self.step)
@@ -860,8 +858,8 @@ class Progress:
                 self.cli.start()
         else:
             self.t = this_t - self.prev_t
-        print_('Step %d, time: %.2f s, update: %.2f, loss: %.3f, tv: %.1f' %
-               (step, self.t, update_size, loss, tv_loss), flush=True)
+        print_('Step %d, time: %.2f s, update: %.2f, tv: %.1f' %
+            (step, self.t, update_size, tv_loss), flush=True)
         self.prev_t = this_t
         if self.callback:
             return self.callback()
@@ -889,8 +887,7 @@ class ProgressHandler(BaseHTTPRequestHandler):
     </style>
     <h1>Style transfer</h1>
     <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
-    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss).3f,
-    tv: %(tv_loss).1f
+    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, tv: %(tv_loss).1f
     """
 
     def do_GET(self):
@@ -907,7 +904,6 @@ class ProgressHandler(BaseHTTPRequestHandler):
                 'steps': self.server.progress.steps,
                 't': self.server.progress.t,
                 'update_size': self.server.progress.update_size,
-                'loss': self.server.progress.loss,
                 'tv_loss': self.server.progress.tv_loss,
                 'w': self.server.transfer.current_output.size[0] / scale,
                 'h': self.server.transfer.current_output.size[1] / scale,
