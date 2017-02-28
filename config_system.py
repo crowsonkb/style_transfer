@@ -26,7 +26,7 @@ def parse_args(state_obj=None):
     parser.add_argument('--output_image', '-oi', help='the output image')
     parser.add_argument('--init-image', '-ii', metavar='IMAGE', help='the initial image')
     parser.add_argument('--aux-image', '-ai', metavar='IMAGE', help='the auxiliary image')
-    parser.add_argument('--config', default=CONFIG_PY, type=Path,
+    parser.add_argument('--config', type=Path,
                         help='a Python source file containing configuration options')
     parser.add_argument('--list-layers', action='store_true', help='list the model\'s layers')
     parser.add_argument('--caffe-path', help='the path to the Caffe installation')
@@ -110,8 +110,12 @@ def parse_args(state_obj=None):
     parser.add_argument('--jitter', action='store_true',
                         help='use slower but higher quality translation-invariant rendering')
 
-    args = vars(parser.parse_args())
-    args.update(eval_config(args['config']))
+    args = {}
+    if CONFIG_PY.exists():
+        args.update(eval_config(CONFIG_PY))
+    args.update(vars(parser.parse_args()))
+    if args['config']:
+        args.update(eval_config(args['config']))
     args2 = AutocallNamespace(state_obj, **args)
     if not args2.list_layers and (not args2.content_image or not args2.style_images):
         parser.print_help()
@@ -150,9 +154,7 @@ CONFIG_GLOBALS = dict(math=math, np=np)
 
 
 def eval_config(config_file):
-    if config_file != CONFIG_PY or config_file.exists():
-        config_code = compile(config_file.read_text(), config_file.name, 'exec')
-        locs = {}
-        exec(config_code, CONFIG_GLOBALS, locs)  # pylint: disable=exec-used
-        return locs
-    return {}
+    config_code = compile(config_file.read_text(), config_file.name, 'exec')
+    locs = {}
+    exec(config_code, CONFIG_GLOBALS, locs)  # pylint: disable=exec-used
+    return locs
