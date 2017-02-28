@@ -17,6 +17,7 @@ import io
 import json
 import multiprocessing as mp
 import os
+from pathlib import Path
 import sys
 import threading
 import time
@@ -982,6 +983,47 @@ def init_model(resp_q, caffe_path, model, weights, mean):
         shapes[layer] = model.data[layer].shape
     resp_q.put(shapes)
 
+VGG16_SHAPES = OrderedDict([('conv1_1', (64, 224, 224)),
+                            ('conv1_2', (64, 224, 224)),
+                            ('pool1', (64, 112, 112)),
+                            ('conv2_1', (128, 112, 112)),
+                            ('conv2_2', (128, 112, 112)),
+                            ('pool2', (128, 56, 56)),
+                            ('conv3_1', (256, 56, 56)),
+                            ('conv3_2', (256, 56, 56)),
+                            ('conv3_3', (256, 56, 56)),
+                            ('pool3', (256, 28, 28)),
+                            ('conv4_1', (512, 28, 28)),
+                            ('conv4_2', (512, 28, 28)),
+                            ('conv4_3', (512, 28, 28)),
+                            ('pool4', (512, 14, 14)),
+                            ('conv5_1', (512, 14, 14)),
+                            ('conv5_2', (512, 14, 14)),
+                            ('conv5_3', (512, 14, 14)),
+                            ('pool5', (512, 7, 7))])
+
+VGG19_SHAPES = OrderedDict([('conv1_1', (64, 224, 224)),
+                            ('conv1_2', (64, 224, 224)),
+                            ('pool1', (64, 112, 112)),
+                            ('conv2_1', (128, 112, 112)),
+                            ('conv2_2', (128, 112, 112)),
+                            ('pool2', (128, 56, 56)),
+                            ('conv3_1', (256, 56, 56)),
+                            ('conv3_2', (256, 56, 56)),
+                            ('conv3_3', (256, 56, 56)),
+                            ('conv3_4', (256, 56, 56)),
+                            ('pool3', (256, 28, 28)),
+                            ('conv4_1', (512, 28, 28)),
+                            ('conv4_2', (512, 28, 28)),
+                            ('conv4_3', (512, 28, 28)),
+                            ('conv4_4', (512, 28, 28)),
+                            ('pool4', (512, 14, 14)),
+                            ('conv5_1', (512, 14, 14)),
+                            ('conv5_2', (512, 14, 14)),
+                            ('conv5_3', (512, 14, 14)),
+                            ('conv5_4', (512, 14, 14)),
+                            ('pool5', (512, 7, 7))])
+
 
 def main():
     """CLI interface for style transfer."""
@@ -1005,11 +1047,17 @@ def main():
     if ARGS.caffe_path:
         sys.path.append(ARGS.caffe_path + '/python')
 
-    print_('Loading %s.' % ARGS.weights)
-    resp_q = CTX.Queue()
-    CTX.Process(target=init_model,
-                args=(resp_q, ARGS.caffe_path, ARGS.model, ARGS.weights, ARGS.mean)).start()
-    shapes = resp_q.get()
+    if Path(ARGS.model).name in ('vgg16.prototxt', 'vgg16_avgpool.prototxt'):
+        shapes = VGG16_SHAPES
+    elif Path(ARGS.model).name in ('vgg19.prototxt', 'vgg19_avgpool.prototxt'):
+        shapes = VGG19_SHAPES
+    else:
+        print_('Loading %s.' % ARGS.weights)
+        resp_q = CTX.Queue()
+        CTX.Process(target=init_model,
+                    args=(resp_q, ARGS.caffe_path, ARGS.model, ARGS.weights, ARGS.mean)).start()
+        shapes = resp_q.get()
+
     print_('Initializing %s.' % ARGS.weights)
     model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, shapes=shapes, placeholder=True)
     transfer = StyleTransfer(model)
