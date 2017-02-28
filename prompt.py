@@ -25,7 +25,8 @@ class Prompt:
         self.thread.start()
 
     def stop(self):
-        self.cli.exit()
+        if self.cli:
+            self.cli.exit()
         self.thread.join()
 
     def set_run_name(self, run):

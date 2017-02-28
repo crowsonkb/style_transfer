@@ -1118,9 +1118,10 @@ def main():
     except KeyboardInterrupt:
         print_()
     finally:
-        STATS.dump()
-        cli.stop()
+        if ARGS.prompt:
+            cli.stop()
 
+    STATS.dump()
     if transfer.current_output:
         output_image = ARGS.output_image
         if not output_image:
