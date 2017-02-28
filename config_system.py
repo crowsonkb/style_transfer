@@ -110,12 +110,23 @@ def parse_args(state_obj=None):
     parser.add_argument('--jitter', action='store_true',
                         help='use slower but higher quality translation-invariant rendering')
 
-    args = {}
+    defaults = vars(parser.parse_args([]))
+    config_args = {}
     if CONFIG_PY.exists():
-        args.update(eval_config(CONFIG_PY))
-    args.update(vars(parser.parse_args()))
-    if args['config']:
-        args.update(eval_config(args['config']))
+        config_args.update(eval_config(CONFIG_PY))
+    sysv_args = vars(parser.parse_args())
+    config2_args = {}
+    if sysv_args['config']:
+        config2_args.update(eval_config(sysv_args['config']))
+
+    args = {}
+    args.update(defaults)
+    args.update(config_args)
+    for arg, value in sysv_args.items():
+        if defaults[arg] != value:
+            args[arg] = value
+    args.update(config2_args)
+
     args2 = AutocallNamespace(state_obj, **args)
     if not args2.list_layers and (not args2.content_image or not args2.style_images):
         parser.print_help()
