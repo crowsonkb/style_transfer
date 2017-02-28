@@ -150,7 +150,9 @@ CONFIG_GLOBALS = dict(math=math, np=np)
 
 
 def eval_config(config_file):
-    config_code = compile(config_file.read_text(), config_file.name, 'exec')
-    locs = {}
-    exec(config_code, CONFIG_GLOBALS, locs)  # pylint: disable=exec-used
-    return locs
+    if config_file != CONFIG_PY or config_file.exists():
+        config_code = compile(config_file.read_text(), config_file.name, 'exec')
+        locs = {}
+        exec(config_code, CONFIG_GLOBALS, locs)  # pylint: disable=exec-used
+        return locs
+    return {}
