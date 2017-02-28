@@ -194,19 +194,25 @@ def wt_norm(x, p=1, wavelet='haar'):
 
 class EWMA:
     """An exponentially weighted moving average with initialization bias correction."""
-    def __init__(self, smoothing, shape, dtype=np.float32):
-        self.smoothing = smoothing
-        self.t = 0
+    def __init__(self, beta, shape, dtype=np.float32, correct_bias=True):
+        self.beta = beta
+        self.fac = 0
+        if correct_bias:
+            self.fac = 1
         self.value = np.zeros(shape, dtype)
 
-    def get(self, bias_correction=True):
+    def get(self):
         """Gets the current value of the running average."""
-        if self.t == 0 or not bias_correction:
-            return self.value
-        return self.value / (1 - self.smoothing**self.t)
+        return self.value / (1 - self.fac)
+
+    def get_est(self, datum):
+        """Estimates the next value of the running average given a datum, but does not update
+        the average."""
+        est_value = self.beta * self.value + (1 - self.beta) * datum
+        return est_value / (1 - self.fac * self.beta)
 
     def update(self, datum):
         """Updates the running average with a new observation."""
-        self.t += 1
-        self.value *= self.smoothing
-        self.value += (1 - self.smoothing) * datum
+        self.fac *= self.beta
+        self.value *= self.beta
+        self.value += (1 - self.beta) * datum

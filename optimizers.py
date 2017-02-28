@@ -13,11 +13,10 @@ class AdamOptimizer:
         self.params = params
         self.step_size = step_size
         self.decay, self.decay_power = decay, decay_power
-        self.biased_g1 = biased_g1
 
         self.i = 0
         self.xy = np.zeros(2, dtype=np.int32)
-        self.g1 = EWMA(b1, params.shape)
+        self.g1 = EWMA(b1, params.shape, correct_bias=not biased_g1)
         self.g2 = EWMA(b2, params.shape)
         self.p1 = EWMA(bp1, params.shape)
 
@@ -32,7 +31,7 @@ class AdamOptimizer:
         # Adam
         self.g1.update(grad)
         self.g2.update(grad**2)
-        step = self.g1.get(not self.biased_g1) / (np.sqrt(self.g2.get()) + EPS)
+        step = self.g1.get() / (np.sqrt(self.g2.get()) + EPS)
         axpy(-step_size, step, self.params)
 
         # Iterate averaging
