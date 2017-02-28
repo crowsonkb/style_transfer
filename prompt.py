@@ -16,8 +16,8 @@ Skip = namedtuple('Skip', '')
 
 class Prompt:
     def __init__(self):
+        self.cli = None
         self.q = queue.Queue()
-        self.shutdown = threading.Event()
         self.thread = threading.Thread(target=self.run)
         self.run_name = ''
 
@@ -25,10 +25,8 @@ class Prompt:
         self.thread.start()
 
     def stop(self):
-        self.shutdown.set()
-
-    def __del__(self):
-        self.stop()
+        self.cli.exit()
+        self.thread.join()
 
     def set_run_name(self, run):
         self.run_name = run
@@ -48,13 +46,16 @@ class Prompt:
         eventloop = create_eventloop()
         app = create_prompt_application('> ', history=history, style=style,
                                         get_bottom_toolbar_tokens=self.get_bottom_toolbar_tokens)
-        cli = CommandLineInterface(app, eventloop)
+        self.cli = CommandLineInterface(app, eventloop)
 
-        with cli.patch_stdout_context(raw=True):
-            while not self.shutdown.is_set():
+        with self.cli.patch_stdout_context(raw=True):
+            while True:
                 try:
-                    cli.run()
-                    cmd = shlex.split(cli.return_value().text)
+                    self.cli.run()
+                    doc = self.cli.return_value()
+                    if doc is None:
+                        return
+                    cmd = shlex.split(doc.text)
                     app.buffer.reset(append_to_history=True)
 
                     if not cmd:

@@ -1115,6 +1115,7 @@ def main():
         print_()
     finally:
         STATS.dump()
+        cli.stop()
 
     if transfer.current_output:
         output_image = ARGS.output_image
