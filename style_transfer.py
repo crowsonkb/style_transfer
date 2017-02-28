@@ -512,7 +512,7 @@ class CaffeModel:
                 nonlocal loss
                 feat = content.features[layer][:, start_[0]:end[0], start_[1]:end[1]]
                 c_grad = self.data[layer] - feat
-                loss += lw * content_weight[layer] * norm2(c_grad) / np.mean(abs(c_grad))
+                loss += lw * content_weight[layer] * norm2(c_grad)
                 axpy(lw * content_weight[layer], normalize(c_grad), self.diff[layer])
 
             def eval_s_grad(layer, style):
@@ -524,8 +524,7 @@ class CaffeModel:
                 s_grad = self._arr_pool.array_like(feat)
                 np.dot(gram_diff, feat, s_grad)
                 s_grad = s_grad.reshape((n, mh, mw))
-                loss_denom = 2 * len(self.styles) * np.mean(abs(s_grad))
-                loss += lw * style_weight[layer] * norm2(gram_diff) / loss_denom
+                loss += lw * style_weight[layer] * norm2(gram_diff) / len(self.styles) / 2
                 axpy(lw * style_weight[layer] / len(self.styles), normalize(s_grad),
                      self.diff[layer])
 
@@ -537,8 +536,7 @@ class CaffeModel:
                 for style in self.styles:
                     eval_s_grad(layer, style)
             if layer in dd_layers:
-                loss -= lw * dd_weight[layer] * norm2(self.data[layer]) / \
-                    np.mean(abs(self.data[layer]))
+                loss -= lw * dd_weight[layer] * norm2(self.data[layer])
                 axpy(-lw * dd_weight[layer], normalize(self.data[layer]), self.diff[layer])
 
             # Run the model backward
@@ -705,7 +703,7 @@ class StyleTransfer:
             STATE.step = step-1
             STATS.update_new_it(scale=STATE.scale, step=step-1,
                                 content_h=self.model.img.shape[1],
-                                content_v=self.model.img.shape[2])
+                                content_w=self.model.img.shape[2])
 
             # Forward jitter
             jitter_scale, _ = self.model.layer_info(
@@ -747,14 +745,16 @@ class StyleTransfer:
             y_diff = avg_img - np.roll(avg_img, -1, axis=-2)
             tv_loss = np.mean(x_diff**2 + y_diff**2)
 
-            STATS.update_current_it(update_size=update_size, loss=loss, tv_norm=tv_loss)
+            STATS.update_current_it(update_size=update_size, loss=loss / self.model.img.size,
+                                    tv_norm=tv_loss)
 
             # Record current output
             self.current_raw = avg_img
             self.current_output = self.model.get_image(avg_img)
 
             if callback is not None:
-                msg = callback(step=step, update_size=update_size, tv_loss=tv_loss)
+                msg = callback(step=step, update_size=update_size, loss=loss / self.model.img.size,
+                               tv_loss=tv_loss)
                 if isinstance(msg, prompt.Skip):
                     break
 
@@ -854,10 +854,11 @@ class Progress:
         self.cli = cli
         self.callback = callback
 
-    def __call__(self, step=-1, update_size=np.nan, tv_loss=np.nan):
+    def __call__(self, step=-1, update_size=np.nan, loss=np.nan, tv_loss=np.nan):
         this_t = timer()
         self.step += 1
         self.update_size = update_size
+        self.loss = loss
         self.tv_loss = tv_loss
         if self.save_every and self.step % self.save_every == 0:
             self.transfer.current_output.save(RUN + '_out_%04d.png' % self.step)
@@ -868,8 +869,8 @@ class Progress:
                 self.cli.start()
         else:
             self.t = this_t - self.prev_t
-        print_('Step %d, time: %.2f s, update: %.2f, tv: %.1f' %
-            (step, self.t, update_size, tv_loss), flush=True)
+        print_('Step %d, time: %.2f s, update: %.2f, loss: %g, tv: %.1f' %
+               (step, self.t, update_size, loss, tv_loss), flush=True)
         self.prev_t = this_t
         if self.callback:
             return self.callback()
@@ -897,7 +898,7 @@ class ProgressHandler(BaseHTTPRequestHandler):
     </style>
     <h1>Style transfer</h1>
     <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
-    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, tv: %(tv_loss).1f
+    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss)g, tv: %(tv_loss).1f
     """
 
     def do_GET(self):
@@ -914,6 +915,7 @@ class ProgressHandler(BaseHTTPRequestHandler):
                 'steps': self.server.progress.steps,
                 't': self.server.progress.t,
                 'update_size': self.server.progress.update_size,
+                'loss': self.server.progress.loss,
                 'tv_loss': self.server.progress.tv_loss,
                 'w': self.server.transfer.current_output.size[0] / scale,
                 'h': self.server.transfer.current_output.size[1] / scale,
