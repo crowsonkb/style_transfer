@@ -11,6 +11,7 @@ class ImageWindow:
         if self.imsh is None or not plt.fignum_exists(self.imsh.figure.number):
             self.imsh = plt.imshow(image, interpolation='nearest')
             self.imsh.axes.axis('off')
+            self.imsh.axes.set_position((0, 0, 1, 1))
             self.imsh.figure.canvas.draw()
         else:
             self.imsh.set_data(image)
