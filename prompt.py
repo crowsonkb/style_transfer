@@ -41,7 +41,7 @@ class Prompt:
     def run(self):
         style = style_from_dict({
             Token.Toolbar: '#ccc bg:#333',
-            Token.Name: '#fff bold',
+            Token.Name: '#fff bold bg:#333',
         })
 
         while not self.shutdown.is_set():
