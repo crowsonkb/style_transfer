@@ -127,7 +127,7 @@ def tv_norm(x, beta=2):
 
 class EWMA:
     """An exponentially weighted moving average with initialization bias correction."""
-    def __init__(self, beta, shape, dtype=np.float32, correct_bias=True):
+    def __init__(self, beta, shape=(), dtype=np.float32, correct_bias=True):
         self.beta = beta
         self.fac = 0
         if correct_bias:
@@ -149,6 +149,7 @@ class EWMA:
         self.fac *= self.beta
         self.value *= self.beta
         self.value += (1 - self.beta) * datum
+        return self.get()
 
 
 def pad_width(shape, divisors):
@@ -194,3 +195,16 @@ def swt_norm(x, wavelet, level):
 #         inv = np.stack(ex.map(partial(pywt.iswt2, wavelet=wavelet), channels))
 #     inv = inv[:, pw[1][0]:pw[1][0]+x.shape[1], pw[2][0]:pw[2][0]+x.shape[2]]
 #     return np.sum(inv**2), inv * 2
+
+
+class Normalizer:
+    """Normalizes arrays according to a decaying mean of their L1 norm."""
+    def __init__(self, beta):
+        self.beta = beta
+        self.norms = {}
+
+    def __call__(self, key, arr):
+        if key not in self.norms:
+            self.norms[key] = EWMA(self.beta)
+        arr /= self.norms[key].update(np.mean(abs(arr))) + EPS
+        return arr
