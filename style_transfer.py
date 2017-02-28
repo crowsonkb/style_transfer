@@ -656,9 +656,11 @@ class StyleTransfer:
             axpy(lw * ARGS.swt_weight, swt_grad, grad)
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
-        p_loss, p_grad = p_norm((self.model.img + self.model.mean - 127.5) / 127.5, p=ARGS.p_power)
-        loss += lw * ARGS.p_weight * p_loss
-        axpy(lw * ARGS.p_weight, p_grad, grad)
+        if ARGS.p_weight:
+            p_loss, p_grad = p_norm((self.model.img + self.model.mean - 127.5) / 127.5,
+                                    p=ARGS.p_power)
+            loss += lw * ARGS.p_weight * p_loss
+            axpy(lw * ARGS.p_weight, p_grad, grad)
 
         # Compute auxiliary image gradient
         if self.aux_image is not None:
