@@ -64,20 +64,10 @@ def parse_args(state_obj=None):
     parser.add_argument(
         '--dd-weight', '-dw', type=ffloat, default=0, help='the Deep Dream factor')
     parser.add_argument(
-        '--denoiser', '-d', default='tv', choices=['tv', 'wavelet'],
-        help='the denoiser to use; \'wavelet\' is higher quality but consumes more CPU.')
-    parser.add_argument(
         '--tv-weight', '-tw', type=ffloat, default=5, help='the TV smoothing factor')
     parser.add_argument(
         '--tv-power', '-tp', metavar='BETA', type=ffloat, default=2,
         help='the TV smoothing exponent')
-    parser.add_argument(
-        '--wt-type', '-wt', metavar='WAVELET', default='bior2.2', help='the wavelet type to use')
-    parser.add_argument(
-        '--wt-weight', '-ww', type=ffloat, default=10, help='the wavelet smoothing factor')
-    parser.add_argument(
-        '--wt-power', '-wp', metavar='P', type=ffloat, default=2,
-        help='the wavelet p-norm exponent')
     parser.add_argument(
         '--p-weight', '-pw', type=ffloat, default=2, help='the p-norm regularizer factor')
     parser.add_argument(

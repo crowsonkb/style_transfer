@@ -10,7 +10,6 @@ import numpy as np
 import numpy.ctypeslib as npct
 from PIL import Image
 from PIL.Image import NEAREST, BILINEAR, BICUBIC, LANCZOS  # pylint: disable=unused-import
-import pywt
 from scipy.linalg import blas
 
 # Machine epsilon for float32
@@ -141,15 +140,6 @@ def gram_matrix(feat):
     # return blas.ssyrk(1 / feat.size, feat)
 
 
-YUV_TO_RGB = np.float32([[1, 0, 1.13983], [1, -0.39465, -0.5806], [1, 2.03211, 0]])
-RGB_TO_YUV = np.linalg.inv(YUV_TO_RGB)
-
-
-def chw_convert(img, mat):
-    """Given a CxHxW format image and a 3x3 matrix, performs colorspace conversion on the image."""
-    return np.dot(mat, img.reshape((img.shape[0], -1))).reshape(img.shape)
-
-
 def tv_norm(x, beta=2):
     """Computes the total variation norm and its gradient. From jcjohnson/cnn-vis and [3]."""
     x_diff = x - roll_by_1(x.copy(), -1, axis=2)
@@ -163,33 +153,6 @@ def tv_norm(x, beta=2):
     grad -= roll_by_1(dx_diff, 1, axis=2)
     grad -= roll_by_1(dy_diff, 1, axis=1)
     return loss, grad
-
-
-def wt_norm(x, p=1, wavelet='haar'):
-    """Computes the wavelet denoising p-norm and its gradient. It is computed in the YUV color
-    space and chroma contributes twice as strongly to the gradient as luma."""
-    with ThreadPoolExecutor(max_workers=3) as ex:
-        x = chw_convert(x, RGB_TO_YUV)
-        yuv = list(ex.map(partial(pywt.wavedec2, wavelet=wavelet, mode='per'), x))
-
-        for ch, coeffs in enumerate(yuv):
-            # Don't penalize the approximation coeffs
-            coeffs[0][:] = 0
-            # Go from high to low frequency, penalizing each lower frequency half as strongly
-            for fac, level in enumerate(reversed(coeffs[1:])):
-                if not ch:
-                    # Luma is penalized half as strongly
-                    fac += 1
-                # The HL and LH subbands are penalized half as strongly
-                h, v, d = level
-                h /= 2**(fac+1)
-                v /= 2**(fac+1)
-                d /= 2**fac
-
-        inv = np.stack(ex.map(partial(pywt.waverec2, wavelet=wavelet, mode='per'), yuv))
-        if inv.shape != x.shape:
-            inv = inv[:, :x.shape[1], :x.shape[2]]
-        return p_norm(chw_convert(inv, YUV_TO_RGB), p)
 
 
 class EWMA:

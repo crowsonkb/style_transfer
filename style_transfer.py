@@ -32,7 +32,7 @@ from six.moves.socketserver import ThreadingMixIn
 
 from config_system import ffloat, parse_args
 import log_utils
-from num_utils import axpy, gram_matrix, norm2, normalize, p_norm, resize, roll2, tv_norm, wt_norm
+from num_utils import axpy, gram_matrix, norm2, normalize, p_norm, resize, roll2, tv_norm
 from optimizers import AdamOptimizer, LBFGSOptimizer
 import prompt
 
@@ -641,32 +641,21 @@ class StyleTransfer:
 
         # Compute style+content gradient
         loss, grad = self.model.eval_sc_grad(*sc_grad_args)
-        logger.debug('sc_grad norm: %g', np.mean(abs(grad)))
 
-        # Compute denoiser gradient
-        if ARGS.denoiser == 'tv':
-            tv_loss, tv_grad = tv_norm(self.model.img / 127.5, beta=ARGS.tv_power)
-            loss += lw * ARGS.tv_weight * tv_loss
-            logger.debug('tv_grad norm: %g', np.mean(abs(tv_grad)) * lw * ARGS.tv_weight)
-            axpy(lw * ARGS.tv_weight, tv_grad, grad)
-        elif ARGS.denoiser == 'wavelet':
-            wt_loss, wt_grad = wt_norm(self.model.img / 127.5,
-                                       p=ARGS.wt_power, wavelet=ARGS.wt_type)
-            loss += lw * ARGS.wt_weight * wt_loss
-            logger.debug('wt_grad norm: %g', np.mean(abs(wt_grad)) * lw * ARGS.wt_weight)
-            axpy(lw * ARGS.wt_weight, wt_grad, grad)
+        # Compute total variation gradient
+        tv_loss, tv_grad = tv_norm(self.model.img / 127.5, beta=ARGS.tv_power)
+        loss += lw * ARGS.tv_weight * tv_loss
+        axpy(lw * ARGS.tv_weight, tv_grad, grad)
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
         p_loss, p_grad = p_norm((self.model.img + self.model.mean - 127.5) / 127.5, p=ARGS.p_power)
         loss += lw * ARGS.p_weight * p_loss
-        logger.debug('p_grad norm:  %g', np.mean(abs(p_grad)) * lw * ARGS.p_weight)
         axpy(lw * ARGS.p_weight, p_grad, grad)
 
         # Compute auxiliary image gradient
         if self.aux_image is not None:
             aux_grad = (self.model.img - self.aux_image) / 127.5
             loss += lw * ARGS.aux_weight * norm2(aux_grad)
-            logger.debug('aux_grad norm: %g', np.mean(abs(aux_grad)) * lw * ARGS.aux_weight)
             axpy(lw * ARGS.aux_weight, aux_grad, grad)
 
         self.model.img = old_img
