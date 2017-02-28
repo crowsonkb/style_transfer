@@ -1,6 +1,7 @@
 """Numerical utilities."""
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 import math
 
 import numpy as np
@@ -179,3 +180,18 @@ def swt_norm(x, wavelet, level):
                                                 pw[2][0]:pw[2][0]+x.shape[2]])
     inv = np.stack(inv_)
     return np.sum(inv**2), inv * 2
+
+
+# def swt_norm(x, wavelet, level):
+#     """Computes the squared 2-norm of the SWT detail coefficients of the input and its gradient."""
+#     div = 2**math.ceil(math.log2(max(x.shape[1:])))
+#     pw = pad_width(x.shape, (1, div, div))
+#     x_pad = np.pad(x, pw, 'wrap')
+#     with ProcessPoolExecutor() as ex:
+#         channels = list(ex.map(partial(pywt.swt2, wavelet=wavelet, level=level), x_pad))
+#         for coeffs in channels:
+#             for a, _ in coeffs:
+#                 a[:] = 0
+#         inv = np.stack(ex.map(partial(pywt.iswt2, wavelet=wavelet), channels))
+#     inv = inv[:, pw[1][0]:pw[1][0]+x.shape[1], pw[2][0]:pw[2][0]+x.shape[2]]
+#     return np.sum(inv**2), inv * 2
