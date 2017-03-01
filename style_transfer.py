@@ -1090,9 +1090,8 @@ def main():
 
     cli, cli_resp = None, None
     if ARGS.prompt:
-        cli = prompt.Prompt()
-        cli_resp = prompt.PromptResponder(cli.q)
-        cli.set_run_name(RUN)
+        cli = prompt.Prompt(RUN, STATE)
+        cli_resp = prompt.PromptResponder(cli.q, ARGS)
 
     server_address = ('', ARGS.port)
     url = 'http://127.0.0.1:%d/' % ARGS.port
@@ -1115,7 +1114,7 @@ def main():
     try:
         transfer.transfer_multiscale(
             [content_image], style_images, initial_image, aux_image, callback=server.progress)
-    except KeyboardInterrupt:
+    except (EOFError, KeyboardInterrupt):
         print_()
     finally:
         if ARGS.prompt:
