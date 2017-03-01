@@ -76,6 +76,8 @@ def parse_args(state_obj=None):
         '--swt-levels', '-wl', default=1, type=int,
         help='the number of levels to use for decomposition')
     parser.add_argument(
+        '--swt-power', '-wp', default=2, type=ffloat, help='the SWT smoothing exponent')
+    parser.add_argument(
         '--p-weight', '-pw', type=ffloat, default=2, help='the p-norm regularizer factor')
     parser.add_argument(
         '--p-power', '-pp', metavar='P', type=ffloat, default=6, help='the p-norm exponent')
@@ -158,6 +160,12 @@ class AutocallNamespace:
             except AttributeError:
                 return ValuePlaceholder()
         return value
+
+    def __setattr__(self, name, value):
+        if name in ('state_obj', 'ns'):
+            object.__setattr__(self, name, value)
+            return
+        setattr(self.ns, name, value)
 
     def __iter__(self):
         yield from vars(self.ns)

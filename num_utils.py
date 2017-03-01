@@ -169,24 +169,23 @@ def pad_width(shape, divisors):
 
 
 def swt_norm(*args, **kwargs):
-    """Computes the squared 2-norm of the SWT detail coefficients of the input and its gradient."""
+    """Computes the p-norm of the SWT detail coefficients of the input and its gradient."""
     return POOL.submit(_swt_norm, *args, **kwargs).result()
 
 
-def _swt_norm(x, wavelet, level):
-    """Computes the squared 2-norm of the SWT detail coefficients of the input and its gradient."""
+def _swt_norm(x, wavelet, level, p=2):
+    """Computes the p-norm of the SWT detail coefficients of the input and its gradient."""
     div = 2**math.ceil(math.log2(max(x.shape[1:])))
     pw = pad_width(x.shape, (1, div, div))
     x_pad = np.pad(x, pw, 'symmetric')
-    inv_ = []
+    inv = []
     for ch in x_pad:
         coeffs = pywt.swt2(ch, wavelet, level)
         for a, _ in coeffs:
             a[:] = 0
-        inv_.append(pywt.iswt2(coeffs, wavelet)[pw[1][0]:pw[1][0]+x.shape[1],
-                                                pw[2][0]:pw[2][0]+x.shape[2]])
-    inv = np.stack(inv_)
-    return np.sum(inv**2), inv * 2
+        inv.append(pywt.iswt2(coeffs, wavelet)[pw[1][0]:pw[1][0]+x.shape[1],
+                                               pw[2][0]:pw[2][0]+x.shape[2]])
+    return p_norm(np.stack(inv), p)
 
 
 # def swt_norm(x, wavelet, level):

@@ -649,7 +649,8 @@ class StyleTransfer:
 
         # Compute SWT norm and gradient
         if ARGS.swt_weight:
-            swt_loss, swt_grad = swt_norm(self.model.img / 127.5, ARGS.swt_wavelet, ARGS.swt_levels)
+            swt_loss, swt_grad = swt_norm(self.model.img / 127.5,
+                                          ARGS.swt_wavelet, ARGS.swt_levels, p=ARGS.swt_power)
             loss += lw * ARGS.swt_weight * swt_loss
             axpy(lw * ARGS.swt_weight, swt_grad, grad)
 
