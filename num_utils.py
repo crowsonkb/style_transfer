@@ -13,7 +13,7 @@ from scipy.linalg import blas
 # Machine epsilon for float32
 EPS = np.finfo(np.float32).eps
 
-POOL = ProcessPoolExecutor()
+POOL = ProcessPoolExecutor(1)
 
 
 # pylint: disable=no-member
