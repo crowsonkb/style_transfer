@@ -170,7 +170,7 @@ def pad_width(shape, divisors):
 
 def swt_norm(*args, **kwargs):
     """Computes the squared 2-norm of the SWT detail coefficients of the input and its gradient."""
-        return ex.submit(_swt_norm, *args, **kwargs).result()
+    return POOL.submit(_swt_norm, *args, **kwargs).result()
 
 
 def _swt_norm(x, wavelet, level):
