@@ -13,6 +13,8 @@ from scipy.linalg import blas
 # Machine epsilon for float32
 EPS = np.finfo(np.float32).eps
 
+POOL = ProcessPoolExecutor()
+
 
 # pylint: disable=no-member
 def dot(x, y):
@@ -166,7 +168,12 @@ def pad_width(shape, divisors):
     return pw
 
 
-def swt_norm(x, wavelet, level):
+def swt_norm(*args, **kwargs):
+    """Computes the squared 2-norm of the SWT detail coefficients of the input and its gradient."""
+        return ex.submit(_swt_norm, *args, **kwargs).result()
+
+
+def _swt_norm(x, wavelet, level):
     """Computes the squared 2-norm of the SWT detail coefficients of the input and its gradient."""
     div = 2**math.ceil(math.log2(max(x.shape[1:])))
     pw = pad_width(x.shape, (1, div, div))
