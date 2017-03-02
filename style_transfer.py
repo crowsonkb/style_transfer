@@ -57,10 +57,25 @@ RUN = ''
 STATE = Namespace()
 
 
+def terminal_bg(light=True, dark=False, default=None):
+    """Returns the first argument if the terminal has a light background, the second if it has a
+    dark background, and the third if it cannot determine."""
+    colorfgbg = os.environ.get('COLORFGBG', '')
+    if colorfgbg == '0;15':
+        return light
+    if colorfgbg == '15;0':
+        return dark
+    return default
+
+
 def setup_exceptions():
+    scheme = terminal_bg('LightBG', 'Linux', 'Neutral')
+    mode = 'Plain'
+    if 'DEBUG' in os.environ:
+        mode = 'Verbose'
     try:
         from IPython.core.ultratb import AutoFormattedTB
-        sys.excepthook = AutoFormattedTB(mode='Verbose', color_scheme='Neutral')
+        sys.excepthook = AutoFormattedTB(mode=mode, color_scheme=scheme)
     except ImportError:
         pass
 
@@ -189,7 +204,7 @@ class TileWorker:
     def process_one_request(self):
         """Receives one request from the master process and acts on it."""
         req = self.req_q.get()
-        logger.debug('Started request %s', req.__class__.__name__)
+        # logger.debug('Started request %s', req.__class__.__name__)
         layers = []
 
         if isinstance(req, FeatureMapRequest):
@@ -230,7 +245,7 @@ class TileWorker:
         if isinstance(req, SetThreadCount):
             set_thread_count(req.threads)
 
-        logger.debug('Finished request %s', req.__class__.__name__)
+        # logger.debug('Finished request %s', req.__class__.__name__)
 
 
 class TileWorkerPoolError(Exception):
@@ -953,14 +968,22 @@ def resize_to_fit(image, size, scale_up=False):
 
 def print_args():
     """Prints out all command-line parameters."""
+    bg = terminal_bg()
+    if bg is True:
+        style = 'xcode'
+    elif bg is False:
+        style = 'monokai'
+
+    pprint = print_
     try:
-        import pygments
-        from pygments.lexers import Python3Lexer
-        from pygments.formatters import TerminalFormatter
-        pprint = partial(pygments.highlight, lexer=Python3Lexer(),
-                         formatter=TerminalFormatter(bg='dark'), outfile=sys.stdout)
+        if bg is not None:
+            import pygments
+            from pygments.lexers import Python3Lexer
+            from pygments.formatters import Terminal256Formatter
+            pprint = partial(pygments.highlight, lexer=Python3Lexer(),
+                             formatter=Terminal256Formatter(style=style), outfile=sys.stdout)
     except ImportError:
-        pprint = print_
+        pass
     print_('Parameters:')
     for key in sorted(ARGS):
         v = repr(getattr(ARGS, key))
@@ -1041,11 +1064,11 @@ def main():
     """CLI interface for style transfer."""
     global ARGS, RUN, STATS
 
-    start_time = timer()
-    setup_exceptions()
     ARGS = parse_args(STATE)
+    setup_exceptions()
     print_args()
 
+    start_time = timer()
     now = datetime.now()
     RUN = '%02d%02d%02d_%02d%02d%02d' % \
         (now.year % 100, now.month, now.day, now.hour, now.minute, now.second)

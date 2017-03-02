@@ -3,6 +3,7 @@
 import argparse
 from fractions import Fraction
 import math
+import os
 from pathlib import Path
 import sys
 
@@ -118,6 +119,7 @@ def parse_args(state_obj=None):
         '--seed', type=int, default=0, help='the random seed')
     parser.add_argument('--jitter', action='store_true',
                         help='use slower but higher quality translation-invariant rendering')
+    parser.add_argument('--debug', action='store_true', help='enable debug messages')
 
     defaults = vars(parser.parse_args([]))
     config_args = {}
@@ -137,6 +139,8 @@ def parse_args(state_obj=None):
     args.update(config2_args)
 
     args2 = AutocallNamespace(state_obj, **args)
+    if args2.debug:
+        os.environ['DEBUG'] = '1'
     if not args2.list_layers and (not args2.content_image or not args2.style_images):
         parser.print_help()
         sys.exit(1)
