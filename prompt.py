@@ -10,7 +10,6 @@ from prompt_toolkit.styles import style_from_dict
 from prompt_toolkit.shortcuts import create_eventloop, create_prompt_application
 from prompt_toolkit.token import Token
 
-Display = namedtuple('Display', 'type')
 Exit = namedtuple('Exit', '')
 Set = namedtuple('Set', 'key value')
 Skip = namedtuple('Skip', '')
@@ -77,12 +76,16 @@ class Prompt:
                         self.q.put(Set(cmd[1], ast.literal_eval(' '.join(cmd[2:]))))
                     else:
                         print('Unknown command. Try \'help\'.')
+                except KeyboardInterrupt:
+                    continue
                 except EOFError:
                     self.q.put(Exit())
                     return
                 except Exception as err:
                     print(err)
-                    continue
+                    self.q.put(Exit())
+                    return
+
 
 class PromptResponder:
     def __init__(self, q, args):
