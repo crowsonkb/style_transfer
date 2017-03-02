@@ -914,7 +914,8 @@ class ProgressHandler(BaseHTTPRequestHandler):
     </style>
     <h1>Style transfer</h1>
     <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
-    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss)g, tv: %(tv_loss).1f
+    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss)g,
+    tv: %(tv_loss).1f
     """
 
     def do_GET(self):
