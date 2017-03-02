@@ -65,12 +65,12 @@ def parse_args(state_obj=None):
     parser.add_argument(
         '--dd-weight', '-dw', type=ffloat, default=0, help='the Deep Dream factor')
     parser.add_argument(
-        '--tv-weight', '-tw', type=ffloat, default=0, help='the TV smoothing factor')
+        '--tv-weight', '-tw', type=ffloat, default=5, help='the TV smoothing factor')
     parser.add_argument(
         '--tv-power', '-tp', metavar='BETA', type=ffloat, default=2,
         help='the TV smoothing exponent')
     parser.add_argument(
-        '--swt-weight', '-ww', metavar='WEIGHT', type=ffloat, default=20,
+        '--swt-weight', '-ww', metavar='WEIGHT', type=ffloat, default=0,
         help='the SWT smoothing factor')
     parser.add_argument(
         '--swt-wavelet', '-wt', metavar='WAVELET', default='haar', help='the SWT wavelet')
