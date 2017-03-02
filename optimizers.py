@@ -7,14 +7,14 @@ from num_utils import axpy, BILINEAR, dot, EPS, EWMA, resize, roll2
 
 class AdamOptimizer:
     """Implements the Adam gradient descent optimizer [4] with iterate averaging."""
-    def __init__(self, params, step_size=1, b1=0.9, b2=0.999, bp1=0, decay=1, decay_power=0,
+    def __init__(self, params, step_size=1, b1=0.9, b2=0.999, bp1=0, decay=0, power=1,
                  biased_g1=False):
         """Initializes the optimizer."""
         self.params = params
         self.step_size = step_size
-        self.decay, self.decay_power = decay, decay_power
+        self.decay, self.power = decay, power
 
-        self.i = 0
+        self.i = 1
         self.xy = np.zeros(2, dtype=np.int32)
         self.g1 = EWMA(b1, params.shape, correct_bias=not biased_g1)
         self.g2 = EWMA(b2, params.shape)
@@ -23,8 +23,8 @@ class AdamOptimizer:
     def update(self, opfunc):
         """Returns a step's parameter update given a loss/gradient evaluation function."""
         # Step size decay
-        step_size = self.step_size / (1 + self.decay * self.i)**self.decay_power
-        self.i += 1
+        step_size = self.step_size / self.i**self.power
+        self.i += self.decay
 
         loss, grad = opfunc(self.params)
 
@@ -50,7 +50,7 @@ class AdamOptimizer:
     def set_params(self, last_iterate):
         """Sets params to the supplied array (a possibly-resized or altered last non-averaged
         iterate), resampling the optimizer's internal state if the shape has changed."""
-        self.i = 0
+        self.i = 1
         self.params = last_iterate
         hw = self.params.shape[-2:]
         self.g1.value = resize(self.g1.value, hw)
