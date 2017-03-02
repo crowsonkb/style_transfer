@@ -953,17 +953,17 @@ class ProgressHandler(BaseHTTPRequestHandler):
 
 def resize_to_fit(image, size, scale_up=False):
     """Resizes image to fit into a size-by-size square."""
-    size = int(round(size))
+    size = int(round(size)) // ARGS.div * ARGS.div
     w, h = image.size
     if not scale_up and max(w, h) <= size:
         return image
     new_w, new_h = w, h
     if w > h:
         new_w = size
-        new_h = int(round(size * h/w))
+        new_h = int(round(size * h/w)) // ARGS.div * ARGS.div
     else:
         new_h = size
-        new_w = int(round(size * w/h))
+        new_w = int(round(size * w/h)) // ARGS.div * ARGS.div
     return image.resize((new_w, new_h), Image.LANCZOS)
 
 

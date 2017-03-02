@@ -119,6 +119,9 @@ def parse_args(state_obj=None):
         '--save-every', metavar='N', type=int, default=0, help='save the image every n steps')
     parser.add_argument(
         '--seed', type=int, default=0, help='the random seed')
+    parser.add_argument('--div', metavar='FACTOR', type=int, default=1,
+                        help='Ensure all images are divisible by FACTOR '
+                        '(can fix some GPU memory alignment issues)')
     parser.add_argument('--jitter', action='store_true',
                         help='use slower but higher quality translation-invariant rendering')
     parser.add_argument('--debug', action='store_true', help='enable debug messages')
