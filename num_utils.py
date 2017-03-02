@@ -129,28 +129,28 @@ def tv_norm(x, beta=2):
 
 class EWMA:
     """An exponentially weighted moving average with initialization bias correction."""
-    def __init__(self, beta, shape=(), dtype=np.float32, correct_bias=True):
-        self.beta = beta
-        self.fac = 0
+    def __init__(self, alpha=None, shape=(), dtype=np.float32, correct_bias=True):
+        self.alpha = alpha
+        self.adj = 0
         if correct_bias:
-            self.fac = 1
+            self.adj = 1
         self.value = np.zeros(shape, dtype)
 
     def get(self):
         """Gets the current value of the running average."""
-        return self.value / (1 - self.fac)
+        return self.value / (1 - self.adj)
 
     def get_est(self, datum):
         """Estimates the next value of the running average given a datum, but does not update
         the average."""
-        est_value = self.beta * self.value + (1 - self.beta) * datum
-        return est_value / (1 - self.fac * self.beta)
+        est_value = self.alpha * self.value + (1 - self.alpha) * datum
+        return est_value / (1 - self.adj * self.alpha)
 
     def update(self, datum):
         """Updates the running average with a new observation."""
-        self.fac *= self.beta
-        self.value *= self.beta
-        self.value += (1 - self.beta) * datum
+        self.adj *= self.alpha
+        self.value *= self.alpha
+        self.value += (1 - self.alpha) * datum
         return self.get()
 
 
