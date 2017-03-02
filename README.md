@@ -71,7 +71,7 @@ Then insert these lines into Caffe's `Makefile.config` to build against the Home
 PYTHON_DIR := /usr/local/opt/python3/Frameworks/Python.framework/Versions/3.6
 PYTHON_LIBRARIES := boost_python3 python3.6m
 PYTHON_INCLUDE := $(PYTHON_DIR)/include/python3.6m \
-	/usr/local/lib/python3.5/site-packages/numpy/core/include
+	/usr/local/lib/python3.6/site-packages/numpy/core/include
 PYTHON_LIB := $(PYTHON_DIR)/lib
 ```
 

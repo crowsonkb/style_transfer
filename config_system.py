@@ -3,6 +3,7 @@
 import argparse
 from fractions import Fraction
 import math
+import os
 from pathlib import Path
 import sys
 
@@ -53,8 +54,8 @@ def parse_args(state_obj=None):
         '--step-size', '-st', type=ffloat, default=15,
         help='the initial step size for Adam')
     parser.add_argument(
-        '--step-decay', '-sd', nargs=2, metavar=('GAMMA', 'POWER'), type=ffloat,
-        default=[0.05, 0.5], help='on step i, divide step_size by (1 + GAMMA * i)^POWER')
+        '--step-decay', '-sd', nargs=2, metavar=('DECAY', 'POWER'), type=ffloat,
+        default=[0.05, 0.5], help='on step i, divide step_size by (1 + DECAY * i)^POWER')
     parser.add_argument(
         '--avg-window', type=ffloat, default=20, help='the iterate averaging window size')
     parser.add_argument(
@@ -64,10 +65,21 @@ def parse_args(state_obj=None):
     parser.add_argument(
         '--dd-weight', '-dw', type=ffloat, default=0, help='the Deep Dream factor')
     parser.add_argument(
-        '--tv-weight', '-tw', type=ffloat, default=5, help='the TV smoothing factor')
+        '--tv-weight', '-tw', type=ffloat, default=0, help='the TV smoothing factor')
     parser.add_argument(
         '--tv-power', '-tp', metavar='BETA', type=ffloat, default=2,
         help='the TV smoothing exponent')
+    parser.add_argument(
+        '--swt-weight', '-ww', metavar='WEIGHT', type=ffloat, default=20,
+        help='the SWT smoothing factor')
+    parser.add_argument(
+        '--swt-wavelet', '-wt', metavar='WAVELET', default='haar', help='the SWT wavelet')
+    parser.add_argument(
+        '--swt-levels', '-wl', metavar='LEVELS', default=1, type=int,
+        help='the number of levels to use for decomposition')
+    parser.add_argument(
+        '--swt-power', '-wp', metavar='P', default=2, type=ffloat,
+        help='the SWT smoothing exponent')
     parser.add_argument(
         '--p-weight', '-pw', type=ffloat, default=2, help='the p-norm regularizer factor')
     parser.add_argument(
@@ -107,8 +119,12 @@ def parse_args(state_obj=None):
         '--save-every', metavar='N', type=int, default=0, help='save the image every n steps')
     parser.add_argument(
         '--seed', type=int, default=0, help='the random seed')
+    parser.add_argument('--div', metavar='FACTOR', type=int, default=1,
+                        help='Ensure all images are divisible by FACTOR '
+                        '(can fix some GPU memory alignment issues)')
     parser.add_argument('--jitter', action='store_true',
                         help='use slower but higher quality translation-invariant rendering')
+    parser.add_argument('--debug', action='store_true', help='enable debug messages')
 
     defaults = vars(parser.parse_args([]))
     config_args = {}
@@ -128,6 +144,8 @@ def parse_args(state_obj=None):
     args.update(config2_args)
 
     args2 = AutocallNamespace(state_obj, **args)
+    if args2.debug:
+        os.environ['DEBUG'] = '1'
     if not args2.list_layers and (not args2.content_image or not args2.style_images):
         parser.print_help()
         sys.exit(1)
@@ -151,6 +169,12 @@ class AutocallNamespace:
             except AttributeError:
                 return ValuePlaceholder()
         return value
+
+    def __setattr__(self, name, value):
+        if name in ('state_obj', 'ns'):
+            object.__setattr__(self, name, value)
+            return
+        setattr(self.ns, name, value)
 
     def __iter__(self):
         yield from vars(self.ns)

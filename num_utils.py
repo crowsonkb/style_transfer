@@ -1,14 +1,19 @@
 """Numerical utilities."""
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from functools import partial
+import math
 
 import numpy as np
 from PIL import Image
 from PIL.Image import NEAREST, BILINEAR, BICUBIC, LANCZOS  # pylint: disable=unused-import
+import pywt
 from scipy.linalg import blas
 
 # Machine epsilon for float32
 EPS = np.finfo(np.float32).eps
+
+POOL = ProcessPoolExecutor(1)
 
 
 # pylint: disable=no-member
@@ -46,7 +51,7 @@ def normalize(arr):
     return arr
 
 
-def resize(a, hw, method=Image.LANCZOS):
+def resize(a, hw, method=LANCZOS):
     """Resamples an image array in CxHxW format to a new HxW size. The interpolation is performed
     in floating point and the result dtype is numpy.float32."""
     def _resize(a, b):
@@ -105,7 +110,6 @@ def gram_matrix(feat):
     n, mh, mw = feat.shape
     feat = feat.reshape((n, mh * mw))
     return np.dot(feat, feat.T) / np.float32(feat.size)
-    # return blas.ssyrk(1 / feat.size, feat)
 
 
 def tv_norm(x, beta=2):
@@ -125,25 +129,88 @@ def tv_norm(x, beta=2):
 
 class EWMA:
     """An exponentially weighted moving average with initialization bias correction."""
-    def __init__(self, beta, shape, dtype=np.float32, correct_bias=True):
-        self.beta = beta
-        self.fac = 0
+    def __init__(self, alpha=None, shape=(), dtype=np.float32, correct_bias=True):
+        self.alpha = alpha
+        self.adj = 0
         if correct_bias:
-            self.fac = 1
+            self.adj = 1
         self.value = np.zeros(shape, dtype)
 
     def get(self):
         """Gets the current value of the running average."""
-        return self.value / (1 - self.fac)
+        return self.value / (1 - self.adj)
 
     def get_est(self, datum):
         """Estimates the next value of the running average given a datum, but does not update
         the average."""
-        est_value = self.beta * self.value + (1 - self.beta) * datum
-        return est_value / (1 - self.fac * self.beta)
+        est_value = self.alpha * self.value + (1 - self.alpha) * datum
+        return est_value / (1 - self.adj * self.alpha)
 
     def update(self, datum):
         """Updates the running average with a new observation."""
-        self.fac *= self.beta
-        self.value *= self.beta
-        self.value += (1 - self.beta) * datum
+        self.adj *= self.alpha
+        self.value *= self.alpha
+        self.value += (1 - self.alpha) * datum
+        return self.get()
+
+
+def pad_width(shape, divisors):
+    """Returns the amount to pad each axis of an array on in order to be divisible by its
+    corresponding divisor. It is intended to be used to generate the 'pad_width' parameter for
+    numpy.pad()."""
+    pw = []
+    for length, divisor in zip(shape, divisors):
+        to_pad = math.ceil(length / divisor) * divisor - length
+        if to_pad % 2 == 0:
+            pw.append((to_pad // 2, to_pad // 2))
+        else:
+            pw.append((to_pad // 2, to_pad // 2 + 1))
+    return pw
+
+
+def swt_norm(*args, **kwargs):
+    """Computes the p-norm of the SWT detail coefficients of the input and its gradient."""
+    return POOL.submit(_swt_norm, *args, **kwargs).result()
+
+
+def _swt_norm(x, wavelet, level, p=2):
+    """Computes the p-norm of the SWT detail coefficients of the input and its gradient."""
+    div = 2**math.ceil(math.log2(max(x.shape[1:])))
+    pw = pad_width(x.shape, (1, div, div))
+    x_pad = np.pad(x, pw, 'symmetric')
+    inv = []
+    for ch in x_pad:
+        coeffs = pywt.swt2(ch, wavelet, level)
+        for a, _ in coeffs:
+            a[:] = 0
+        inv.append(pywt.iswt2(coeffs, wavelet)[pw[1][0]:pw[1][0]+x.shape[1],
+                                               pw[2][0]:pw[2][0]+x.shape[2]])
+    return p_norm(np.stack(inv), p)
+
+
+# def swt_norm(x, wavelet, level):
+#     """Computes the squared 2-norm of the SWT detail coefficients of the input and its gradient."""
+#     div = 2**math.ceil(math.log2(max(x.shape[1:])))
+#     pw = pad_width(x.shape, (1, div, div))
+#     x_pad = np.pad(x, pw, 'symmetric')
+#     with ProcessPoolExecutor() as ex:
+#         channels = list(ex.map(partial(pywt.swt2, wavelet=wavelet, level=level), x_pad))
+#         for coeffs in channels:
+#             for a, _ in coeffs:
+#                 a[:] = 0
+#         inv = np.stack(ex.map(partial(pywt.iswt2, wavelet=wavelet), channels))
+#     inv = inv[:, pw[1][0]:pw[1][0]+x.shape[1], pw[2][0]:pw[2][0]+x.shape[2]]
+#     return np.sum(inv**2), inv * 2
+
+
+class Normalizer:
+    """Normalizes arrays by a moving average of their absolute mean."""
+    def __init__(self, alpha):
+        self.alpha = alpha
+        self.norms = {}
+
+    def __call__(self, key, arr):
+        if key not in self.norms:
+            self.norms[key] = EWMA(self.alpha)
+        arr /= self.norms[key].update(np.mean(abs(arr))) + EPS
+        return arr

@@ -1,3 +1,4 @@
+import ast
 from collections import namedtuple
 import queue
 import shlex
@@ -9,52 +10,57 @@ from prompt_toolkit.styles import style_from_dict
 from prompt_toolkit.shortcuts import create_eventloop, create_prompt_application
 from prompt_toolkit.token import Token
 
-Display = namedtuple('Display', 'type')
 Exit = namedtuple('Exit', '')
+Set = namedtuple('Set', 'key value')
 Skip = namedtuple('Skip', '')
 
 
 class Prompt:
-    def __init__(self):
+    def __init__(self, run_name, state_obj):
+        self.run_name = run_name
+        self.state_obj = state_obj
+        self.cli = None
         self.q = queue.Queue()
-        self.shutdown = threading.Event()
         self.thread = threading.Thread(target=self.run)
-        self.run_name = ''
 
     def start(self):
         self.thread.start()
 
     def stop(self):
-        self.shutdown.set()
-
-    def __del__(self):
-        self.stop()
-
-    def set_run_name(self, run):
-        self.run_name = run
+        if self.cli:
+            self.cli.exit()
+        self.thread.join()
 
     def get_bottom_toolbar_tokens(self, cli):
         return [(Token.Toolbar, 'Run '),
                 (Token.Name, self.run_name),
                 (Token.Toolbar, ' in progress.')]
 
+    def get_prompt_tokens(self, cli):
+        return [(Token.Prompt, '> ')]
+
     def run(self):
         style = style_from_dict({
+            Token.Prompt: 'bold',
             Token.Toolbar: '#ccc bg:#333',
             Token.Name: '#fff bold bg:#333',
         })
 
         history = InMemoryHistory()
         eventloop = create_eventloop()
-        app = create_prompt_application('> ', history=history, style=style,
-                                        get_bottom_toolbar_tokens=self.get_bottom_toolbar_tokens)
-        cli = CommandLineInterface(app, eventloop)
+        app = create_prompt_application(history=history, style=style,
+                                        get_bottom_toolbar_tokens=self.get_bottom_toolbar_tokens,
+                                        get_prompt_tokens=self.get_prompt_tokens)
+        self.cli = CommandLineInterface(app, eventloop)
 
-        with cli.patch_stdout_context(raw=True):
-            while not self.shutdown.is_set():
+        with self.cli.patch_stdout_context(raw=True):
+            while True:
                 try:
-                    cli.run()
-                    cmd = shlex.split(cli.return_value().text)
+                    self.cli.run()
+                    doc = self.cli.return_value()
+                    if doc is None:
+                        return
+                    cmd = shlex.split(doc.text)
                     app.buffer.reset(append_to_history=True)
 
                     if not cmd:
@@ -66,6 +72,8 @@ class Prompt:
                         print('Help text forthcoming.')
                     elif cmd[0] == 'skip':
                         self.q.put(Skip())
+                    elif cmd[0] == 'set':
+                        self.q.put(Set(cmd[1], ast.literal_eval(' '.join(cmd[2:]))))
                     else:
                         print('Unknown command. Try \'help\'.')
                 except KeyboardInterrupt:
@@ -73,11 +81,16 @@ class Prompt:
                 except EOFError:
                     self.q.put(Exit())
                     return
+                except Exception as err:
+                    print(err)
+                    self.q.put(Exit())
+                    return
 
 
 class PromptResponder:
-    def __init__(self, q):
+    def __init__(self, q, args):
         self.q = q
+        self.args = args
 
     def __call__(self):
         try:
@@ -87,5 +100,7 @@ class PromptResponder:
                     raise KeyboardInterrupt()
                 elif isinstance(event, Skip):
                     return event
+                elif isinstance(event, Set):
+                    setattr(self.args, event.key, event.value)
         except queue.Empty:
             pass

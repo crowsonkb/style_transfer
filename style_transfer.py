@@ -33,7 +33,7 @@ from six.moves.socketserver import ThreadingMixIn
 
 from config_system import ffloat, parse_args
 import log_utils
-from num_utils import axpy, gram_matrix, norm2, normalize, p_norm, resize, roll2, tv_norm
+from num_utils import axpy, gram_matrix, norm2, normalize, p_norm, resize, roll2, tv_norm, swt_norm
 from optimizers import AdamOptimizer, LBFGSOptimizer
 import prompt
 
@@ -57,10 +57,25 @@ RUN = ''
 STATE = Namespace()
 
 
+def terminal_bg(light=True, dark=False, default=None):
+    """Returns the first argument if the terminal has a light background, the second if it has a
+    dark background, and the third if it cannot determine."""
+    colorfgbg = os.environ.get('COLORFGBG', '')
+    if colorfgbg == '0;15':
+        return light
+    if colorfgbg == '15;0':
+        return dark
+    return default
+
+
 def setup_exceptions():
+    scheme = terminal_bg('LightBG', 'Linux', 'Neutral')
+    mode = 'Plain'
+    if 'DEBUG' in os.environ:
+        mode = 'Verbose'
     try:
         from IPython.core.ultratb import AutoFormattedTB
-        sys.excepthook = AutoFormattedTB(mode='Verbose', color_scheme='Neutral')
+        sys.excepthook = AutoFormattedTB(mode=mode, color_scheme=scheme)
     except ImportError:
         pass
 
@@ -189,7 +204,7 @@ class TileWorker:
     def process_one_request(self):
         """Receives one request from the master process and acts on it."""
         req = self.req_q.get()
-        logger.debug('Started request %s', req.__class__.__name__)
+        # logger.debug('Started request %s', req.__class__.__name__)
         layers = []
 
         if isinstance(req, FeatureMapRequest):
@@ -230,7 +245,7 @@ class TileWorker:
         if isinstance(req, SetThreadCount):
             set_thread_count(req.threads)
 
-        logger.debug('Finished request %s', req.__class__.__name__)
+        # logger.debug('Finished request %s', req.__class__.__name__)
 
 
 class TileWorkerPoolError(Exception):
@@ -512,7 +527,7 @@ class CaffeModel:
                 nonlocal loss
                 feat = content.features[layer][:, start_[0]:end[0], start_[1]:end[1]]
                 c_grad = self.data[layer] - feat
-                loss += lw * content_weight[layer] * norm2(c_grad) / np.mean(abs(c_grad))
+                loss += lw * content_weight[layer] * norm2(c_grad)
                 axpy(lw * content_weight[layer], normalize(c_grad), self.diff[layer])
 
             def eval_s_grad(layer, style):
@@ -524,8 +539,7 @@ class CaffeModel:
                 s_grad = self._arr_pool.array_like(feat)
                 np.dot(gram_diff, feat, s_grad)
                 s_grad = s_grad.reshape((n, mh, mw))
-                loss_denom = 2 * len(self.styles) * np.mean(abs(s_grad))
-                loss += lw * style_weight[layer] * norm2(gram_diff) / loss_denom
+                loss += lw * style_weight[layer] * norm2(gram_diff) / len(self.styles) / 2
                 axpy(lw * style_weight[layer] / len(self.styles), normalize(s_grad),
                      self.diff[layer])
 
@@ -537,8 +551,7 @@ class CaffeModel:
                 for style in self.styles:
                     eval_s_grad(layer, style)
             if layer in dd_layers:
-                loss -= lw * dd_weight[layer] * norm2(self.data[layer]) / \
-                    np.mean(abs(self.data[layer]))
+                loss -= lw * dd_weight[layer] * norm2(self.data[layer])
                 axpy(-lw * dd_weight[layer], normalize(self.data[layer]), self.diff[layer])
 
             # Run the model backward
@@ -644,14 +657,24 @@ class StyleTransfer:
         loss, grad = self.model.eval_sc_grad(*sc_grad_args)
 
         # Compute total variation gradient
-        tv_loss, tv_grad = tv_norm(self.model.img / 127.5, beta=ARGS.tv_power)
-        loss += lw * ARGS.tv_weight * tv_loss
-        axpy(lw * ARGS.tv_weight, tv_grad, grad)
+        if ARGS.tv_weight:
+            tv_loss, tv_grad = tv_norm(self.model.img / 127.5, beta=ARGS.tv_power)
+            loss += lw * ARGS.tv_weight * tv_loss
+            axpy(lw * ARGS.tv_weight, tv_grad, grad)
+
+        # Compute SWT norm and gradient
+        if ARGS.swt_weight:
+            swt_loss, swt_grad = swt_norm(self.model.img / 127.5,
+                                          ARGS.swt_wavelet, ARGS.swt_levels, p=ARGS.swt_power)
+            loss += lw * ARGS.swt_weight * swt_loss
+            axpy(lw * ARGS.swt_weight, swt_grad, grad)
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
-        p_loss, p_grad = p_norm((self.model.img + self.model.mean - 127.5) / 127.5, p=ARGS.p_power)
-        loss += lw * ARGS.p_weight * p_loss
-        axpy(lw * ARGS.p_weight, p_grad, grad)
+        if ARGS.p_weight:
+            p_loss, p_grad = p_norm((self.model.img + self.model.mean - 127.5) / 127.5,
+                                    p=ARGS.p_power)
+            loss += lw * ARGS.p_weight * p_loss
+            axpy(lw * ARGS.p_weight, p_grad, grad)
 
         # Compute auxiliary image gradient
         if self.aux_image is not None:
@@ -696,7 +719,7 @@ class StyleTransfer:
             STATE.step = step-1
             STATS.update_new_it(scale=STATE.scale, step=step-1,
                                 content_h=self.model.img.shape[1],
-                                content_v=self.model.img.shape[2])
+                                content_w=self.model.img.shape[2])
 
             # Forward jitter
             jitter_scale, _ = self.model.layer_info(
@@ -738,14 +761,16 @@ class StyleTransfer:
             y_diff = avg_img - np.roll(avg_img, -1, axis=-2)
             tv_loss = np.mean(x_diff**2 + y_diff**2)
 
-            STATS.update_current_it(update_size=update_size, loss=loss, tv_norm=tv_loss)
+            STATS.update_current_it(update_size=update_size, loss=loss / self.model.img.size,
+                                    tv_norm=tv_loss)
 
             # Record current output
             self.current_raw = avg_img
             self.current_output = self.model.get_image(avg_img)
 
             if callback is not None:
-                msg = callback(step=step, update_size=update_size, tv_loss=tv_loss)
+                msg = callback(step=step, update_size=update_size, loss=loss / self.model.img.size,
+                               tv_loss=tv_loss)
                 if isinstance(msg, prompt.Skip):
                     break
 
@@ -812,7 +837,7 @@ class StyleTransfer:
                 if ARGS.optimizer == 'adam':
                     self.optimizer = AdamOptimizer(
                         self.model.img, step_size=ARGS.step_size, bp1=1-(1/ARGS.avg_window),
-                        decay=ARGS.step_decay[0], decay_power=ARGS.step_decay[1],
+                        decay=ARGS.step_decay[0], power=ARGS.step_decay[1],
                         biased_g1=biased_g1)
                 elif ARGS.optimizer == 'lbfgs':
                     self.optimizer = LBFGSOptimizer(self.model.img)
@@ -845,10 +870,11 @@ class Progress:
         self.cli = cli
         self.callback = callback
 
-    def __call__(self, step=-1, update_size=np.nan, tv_loss=np.nan):
+    def __call__(self, step=-1, update_size=np.nan, loss=np.nan, tv_loss=np.nan):
         this_t = timer()
         self.step += 1
         self.update_size = update_size
+        self.loss = loss
         self.tv_loss = tv_loss
         if self.save_every and self.step % self.save_every == 0:
             self.transfer.current_output.save(RUN + '_out_%04d.png' % self.step)
@@ -859,8 +885,8 @@ class Progress:
                 self.cli.start()
         else:
             self.t = this_t - self.prev_t
-        print_('Step %d, time: %.2f s, update: %.2f, tv: %.1f' %
-            (step, self.t, update_size, tv_loss), flush=True)
+        print_('Step %d, time: %.2f s, update: %.2f, loss: %g, tv: %.1f' %
+               (step, self.t, update_size, loss, tv_loss), flush=True)
         self.prev_t = this_t
         if self.callback:
             return self.callback()
@@ -888,7 +914,8 @@ class ProgressHandler(BaseHTTPRequestHandler):
     </style>
     <h1>Style transfer</h1>
     <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
-    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, tv: %(tv_loss).1f
+    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss)g,
+    tv: %(tv_loss).1f
     """
 
     def do_GET(self):
@@ -905,6 +932,7 @@ class ProgressHandler(BaseHTTPRequestHandler):
                 'steps': self.server.progress.steps,
                 't': self.server.progress.t,
                 'update_size': self.server.progress.update_size,
+                'loss': self.server.progress.loss,
                 'tv_loss': self.server.progress.tv_loss,
                 'w': self.server.transfer.current_output.size[0] / scale,
                 'h': self.server.transfer.current_output.size[1] / scale,
@@ -925,30 +953,38 @@ class ProgressHandler(BaseHTTPRequestHandler):
 
 def resize_to_fit(image, size, scale_up=False):
     """Resizes image to fit into a size-by-size square."""
-    size = int(round(size))
+    size = int(round(size)) // ARGS.div * ARGS.div
     w, h = image.size
     if not scale_up and max(w, h) <= size:
         return image
     new_w, new_h = w, h
     if w > h:
         new_w = size
-        new_h = int(round(size * h/w))
+        new_h = int(round(size * h/w)) // ARGS.div * ARGS.div
     else:
         new_h = size
-        new_w = int(round(size * w/h))
+        new_w = int(round(size * w/h)) // ARGS.div * ARGS.div
     return image.resize((new_w, new_h), Image.LANCZOS)
 
 
 def print_args():
     """Prints out all command-line parameters."""
+    bg = terminal_bg()
+    if bg is True:
+        style = 'xcode'
+    elif bg is False:
+        style = 'monokai'
+
+    pprint = print_
     try:
-        import pygments
-        from pygments.lexers import Python3Lexer
-        from pygments.formatters import TerminalFormatter
-        pprint = partial(pygments.highlight, lexer=Python3Lexer(),
-                         formatter=TerminalFormatter(bg='dark'), outfile=sys.stdout)
+        if bg is not None:
+            import pygments
+            from pygments.lexers import Python3Lexer
+            from pygments.formatters import Terminal256Formatter
+            pprint = partial(pygments.highlight, lexer=Python3Lexer(),
+                             formatter=Terminal256Formatter(style=style), outfile=sys.stdout)
     except ImportError:
-        pprint = print_
+        pass
     print_('Parameters:')
     for key in sorted(ARGS):
         v = repr(getattr(ARGS, key))
@@ -1029,11 +1065,11 @@ def main():
     """CLI interface for style transfer."""
     global ARGS, RUN, STATS
 
-    start_time = timer()
-    setup_exceptions()
     ARGS = parse_args(STATE)
+    setup_exceptions()
     print_args()
 
+    start_time = timer()
     now = datetime.now()
     RUN = '%02d%02d%02d_%02d%02d%02d' % \
         (now.year % 100, now.month, now.day, now.hour, now.minute, now.second)
@@ -1079,9 +1115,8 @@ def main():
 
     cli, cli_resp = None, None
     if ARGS.prompt:
-        cli = prompt.Prompt()
-        cli_resp = prompt.PromptResponder(cli.q)
-        cli.set_run_name(RUN)
+        cli = prompt.Prompt(RUN, STATE)
+        cli_resp = prompt.PromptResponder(cli.q, ARGS)
 
     server_address = ('', ARGS.port)
     url = 'http://127.0.0.1:%d/' % ARGS.port
@@ -1104,11 +1139,13 @@ def main():
     try:
         transfer.transfer_multiscale(
             [content_image], style_images, initial_image, aux_image, callback=server.progress)
-    except KeyboardInterrupt:
+    except (EOFError, KeyboardInterrupt):
         print_()
     finally:
-        STATS.dump()
+        if ARGS.prompt:
+            cli.stop()
 
+    STATS.dump()
     if transfer.current_output:
         output_image = ARGS.output_image
         if not output_image:
