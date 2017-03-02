@@ -204,13 +204,13 @@ def _swt_norm(x, wavelet, level, p=2):
 
 
 class Normalizer:
-    """Normalizes arrays according to a decaying mean of their L1 norm."""
-    def __init__(self, beta):
-        self.beta = beta
+    """Normalizes arrays by a moving average of their absolute mean."""
+    def __init__(self, alpha):
+        self.alpha = alpha
         self.norms = {}
 
     def __call__(self, key, arr):
         if key not in self.norms:
-            self.norms[key] = EWMA(self.beta)
+            self.norms[key] = EWMA(self.alpha)
         arr /= self.norms[key].update(np.mean(abs(arr))) + EPS
         return arr
