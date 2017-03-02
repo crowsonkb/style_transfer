@@ -54,8 +54,8 @@ def parse_args(state_obj=None):
         '--step-size', '-st', type=ffloat, default=15,
         help='the initial step size for Adam')
     parser.add_argument(
-        '--step-decay', '-sd', nargs=2, metavar=('GAMMA', 'POWER'), type=ffloat,
-        default=[0.05, 0.5], help='on step i, divide step_size by (1 + GAMMA * i)^POWER')
+        '--step-decay', '-sd', nargs=2, metavar=('DECAY', 'POWER'), type=ffloat,
+        default=[0.05, 0.5], help='on step i, divide step_size by (1 + DECAY * i)^POWER')
     parser.add_argument(
         '--avg-window', type=ffloat, default=20, help='the iterate averaging window size')
     parser.add_argument(
@@ -70,14 +70,16 @@ def parse_args(state_obj=None):
         '--tv-power', '-tp', metavar='BETA', type=ffloat, default=2,
         help='the TV smoothing exponent')
     parser.add_argument(
-        '--swt-weight', '-ww', type=ffloat, default=20, help='the SWT smoothing factor')
+        '--swt-weight', '-ww', metavar='WEIGHT', type=ffloat, default=20,
+        help='the SWT smoothing factor')
     parser.add_argument(
-        '--swt-wavelet', '-wt', default='haar', help='the SWT wavelet')
+        '--swt-wavelet', '-wt', metavar='WAVELET', default='haar', help='the SWT wavelet')
     parser.add_argument(
-        '--swt-levels', '-wl', default=1, type=int,
+        '--swt-levels', '-wl', metavar='LEVELS', default=1, type=int,
         help='the number of levels to use for decomposition')
     parser.add_argument(
-        '--swt-power', '-wp', default=2, type=ffloat, help='the SWT smoothing exponent')
+        '--swt-power', '-wp', metavar='P', default=2, type=ffloat,
+        help='the SWT smoothing exponent')
     parser.add_argument(
         '--p-weight', '-pw', type=ffloat, default=2, help='the p-norm regularizer factor')
     parser.add_argument(

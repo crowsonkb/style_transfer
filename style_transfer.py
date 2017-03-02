@@ -837,7 +837,7 @@ class StyleTransfer:
                 if ARGS.optimizer == 'adam':
                     self.optimizer = AdamOptimizer(
                         self.model.img, step_size=ARGS.step_size, bp1=1-(1/ARGS.avg_window),
-                        decay=ARGS.step_decay[0], decay_power=ARGS.step_decay[1],
+                        decay=ARGS.step_decay[0], power=ARGS.step_decay[1],
                         biased_g1=biased_g1)
                 elif ARGS.optimizer == 'lbfgs':
                     self.optimizer = LBFGSOptimizer(self.model.img)
