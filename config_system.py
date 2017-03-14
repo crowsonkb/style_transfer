@@ -17,114 +17,91 @@ def ffloat(s):
     return float(Fraction(s))
 
 
+class arg:
+    def __init__(self, *args, **kwargs):
+        self.args, self.kwargs = args, kwargs
+
+def add_args(parser, args):
+    for a in args:
+        parser.add_argument(*a.args, **a.kwargs)
+
+
 def parse_args(state_obj=None):
     """Parses command line arguments."""
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--content-image', '-ci', help='the content image')
-    parser.add_argument('--style-images', '-si', nargs='+', default=[],
-                        metavar='STYLE_IMAGE', help='the style images')
-    parser.add_argument('--output_image', '-oi', help='the output image')
-    parser.add_argument('--init-image', '-ii', metavar='IMAGE', help='the initial image')
-    parser.add_argument('--aux-image', '-ai', metavar='IMAGE', help='the auxiliary image')
-    parser.add_argument('--config', type=Path,
-                        help='a Python source file containing configuration options')
-    parser.add_argument('--list-layers', action='store_true', help='list the model\'s layers')
-    parser.add_argument('--caffe-path', help='the path to the Caffe installation')
-    parser.add_argument(
-        '--devices', nargs='+', metavar='DEVICE', type=int, default=[-1],
-        help='GPU device numbers to use (-1 for cpu)')
-    parser.add_argument(
-        '--iterations', '-i', nargs='+', type=int, default=[200, 100],
-        help='the number of iterations')
-    parser.add_argument(
-        '--size', '-s', type=int, default=256, help='the output size')
-    parser.add_argument(
-        '--min-size', type=int, default=182, help='the minimum scale\'s size')
-    parser.add_argument(
-        '--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor')
-    parser.add_argument(
-        '--style-scale-up', default=False, action='store_true',
-        help='allow scaling style images up')
-    parser.add_argument(
-        '--tile-size', type=int, default=512, help='the maximum rendering tile size')
-    parser.add_argument('--optimizer', '-o', default='adam', choices=['adam', 'lbfgs'],
-                        help='the optimizer to use')
-    parser.add_argument(
-        '--step-size', '-st', type=ffloat, default=15,
-        help='the initial step size for Adam')
-    parser.add_argument(
-        '--step-decay', '-sd', nargs=2, metavar=('DECAY', 'POWER'), type=ffloat,
-        default=[0.05, 0.5], help='on step i, divide step_size by (1 + DECAY * i)^POWER')
-    parser.add_argument(
-        '--avg-window', type=ffloat, default=20, help='the iterate averaging window size')
-    parser.add_argument(
-        '--layer-weights', help='a json file containing per-layer weight scaling factors')
-    parser.add_argument(
-        '--content-weight', '-cw', type=ffloat, default=0.05, help='the content image factor')
-    parser.add_argument(
-        '--dd-weight', '-dw', type=ffloat, default=0, help='the Deep Dream factor')
-    parser.add_argument(
-        '--tv-weight', '-tw', type=ffloat, default=5, help='the TV smoothing factor')
-    parser.add_argument(
-        '--tv-power', '-tp', metavar='BETA', type=ffloat, default=2,
-        help='the TV smoothing exponent')
-    parser.add_argument(
-        '--swt-weight', '-ww', metavar='WEIGHT', type=ffloat, default=0,
-        help='the SWT smoothing factor')
-    parser.add_argument(
-        '--swt-wavelet', '-wt', metavar='WAVELET', default='haar', help='the SWT wavelet')
-    parser.add_argument(
-        '--swt-levels', '-wl', metavar='LEVELS', default=1, type=int,
-        help='the number of levels to use for decomposition')
-    parser.add_argument(
-        '--swt-power', '-wp', metavar='P', default=2, type=ffloat,
-        help='the SWT smoothing exponent')
-    parser.add_argument(
-        '--p-weight', '-pw', type=ffloat, default=2, help='the p-norm regularizer factor')
-    parser.add_argument(
-        '--p-power', '-pp', metavar='P', type=ffloat, default=6, help='the p-norm exponent')
-    parser.add_argument(
-        '--aux-weight', '-aw', type=ffloat, default=10, help='the auxiliary image factor')
-    parser.add_argument(
-        '--content-layers', nargs='*', default=['conv4_2'],
-        metavar='LAYER', help='the layers to use for content')
-    parser.add_argument(
-        '--style-layers', nargs='*', metavar='LAYER',
-        default=['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1'],
-        help='the layers to use for style')
-    parser.add_argument(
-        '--dd-layers', nargs='*', metavar='LAYER', default=[],
-        help='the layers to use for Deep Dream')
-    parser.add_argument(
-        '--port', '-p', type=int, default=8000,
-        help='the port to use for the http server')
-    parser.add_argument(
-        '--display', default='browser', choices=['browser', 'gui', 'none'],
-        help='the display method to use')
-    parser.add_argument(
-        '--hidpi', action='store_true', help='display the image at 2x scale in the browser')
-    parser.add_argument('--prompt', action='store_true', help='enable the experimental prompt')
-    parser.add_argument(
-        '--model', default='vgg19.prototxt',
-        help='the Caffe deploy.prototxt for the model to use')
-    parser.add_argument(
-        '--weights', default='vgg19.caffemodel',
-        help='the Caffe .caffemodel for the model to use')
-    parser.add_argument(
-        '--mean', nargs=3, metavar=('B_MEAN', 'G_MEAN', 'R_MEAN'),
-        default=(103.939, 116.779, 123.68),
-        help='the per-channel means of the model (BGR order)')
-    parser.add_argument(
-        '--save-every', metavar='N', type=int, default=0, help='save the image every n steps')
-    parser.add_argument(
-        '--seed', type=int, default=0, help='the random seed')
-    parser.add_argument('--div', metavar='FACTOR', type=int, default=1,
-                        help='Ensure all images are divisible by FACTOR '
-                        '(can fix some GPU memory alignment issues)')
-    parser.add_argument('--jitter', action='store_true',
-                        help='use slower but higher quality translation-invariant rendering')
-    parser.add_argument('--debug', action='store_true', help='enable debug messages')
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    add_args(parser, [
+        arg('--content-image', '-ci', help='the content image'),
+        arg('--style-images', '-si', nargs='+', default=[], metavar='STYLE_IMAGE',
+            help='the style images'),
+        arg('--output_image', '-oi', help='the output image'),
+        arg('--init-image', '-ii', metavar='IMAGE', help='the initial image'),
+        arg('--aux-image', '-ai', metavar='IMAGE', help='the auxiliary image'),
+        arg('--config', type=Path, help='a Python source file containing configuration options'),
+        arg('--list-layers', action='store_true', help='list the model\'s layers'),
+        arg('--caffe-path', help='the path to the Caffe installation'),
+        arg('--devices', nargs='+', metavar='DEVICE', type=int, default=[-1],
+            help='GPU device numbers to use (-1 for cpu)'),
+        arg('--iterations', '-i', nargs='+', type=int, default=[200, 100],
+            help='the number of iterations'),
+        arg('--size', '-s', type=int, default=256, help='the output size'),
+        arg('--min-size', type=int, default=182, help='the minimum scale\'s size'),
+        arg('--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor'),
+        arg('--style-scale-up', default=False, action='store_true',
+            help='allow scaling style images up'),
+        arg('--tile-size', type=int, default=512, help='the maximum rendering tile size'),
+        arg('--optimizer', '-o', default='adam', choices=['adam', 'lbfgs'],
+            help='the optimizer to use'),
+        arg('--step-size', '-st', type=ffloat, default=15,
+            help='the initial step size for Adam'),
+        arg('--step-decay', '-sd', nargs=2, metavar=('DECAY', 'POWER'), type=ffloat,
+            default=[0.05, 0.5], help='on step i, divide step_size by (1 + DECAY * i)^POWER'),
+        arg('--avg-window', type=ffloat, default=20, help='the iterate averaging window size'),
+        arg('--layer-weights', help='a json file containing per-layer weight scaling factors'),
+        arg('--content-weight', '-cw', type=ffloat, default=0.05, help='the content image factor'),
+        arg('--dd-weight', '-dw', type=ffloat, default=0, help='the Deep Dream factor'),
+        arg('--tv-weight', '-tw', type=ffloat, default=5, help='the TV smoothing factor'),
+        arg('--tv-power', '-tp', metavar='BETA', type=ffloat, default=2,
+            help='the TV smoothing exponent'),
+        arg('--swt-weight', '-ww', metavar='WEIGHT', type=ffloat, default=0,
+            help='the SWT smoothing factor'),
+        arg('--swt-wavelet', '-wt', metavar='WAVELET', default='haar',
+            help='the SWT wavelet'),
+        arg('--swt-levels', '-wl', metavar='LEVELS', default=1, type=int,
+            help='the number of levels to use for decomposition'),
+        arg('--swt-power', '-wp', metavar='P', default=2, type=ffloat,
+            help='the SWT smoothing exponent'),
+        arg('--p-weight', '-pw', type=ffloat, default=2, help='the p-norm regularizer factor'),
+        arg('--p-power', '-pp', metavar='P', type=ffloat, default=6, help='the p-norm exponent'),
+        arg('--aux-weight', '-aw', type=ffloat, default=10, help='the auxiliary image factor'),
+        arg('--content-layers', nargs='*', default=['conv4_2'],metavar='LAYER',
+            help='the layers to use for content'),
+        arg('--style-layers', nargs='*', metavar='LAYER',
+            default=['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1'],
+            help='the layers to use for style'),
+        arg('--dd-layers', nargs='*', metavar='LAYER', default=[],
+            help='the layers to use for Deep Dream'),
+        arg('--port', '-p', type=int, default=8000, help='the port to use for the http server'),
+        arg('--display', default='browser', choices=['browser', 'gui', 'none'],
+            help='the display method to use'),
+        arg('--hidpi', action='store_true', help='display the image at 2x scale in the browser'),
+        arg('--prompt', action='store_true', help='enable the experimental prompt'),
+        arg('--model', default='vgg19.prototxt',
+            help='the Caffe deploy.prototxt for the model to use'),
+        arg('--weights', default='vgg19.caffemodel',
+            help='the Caffe .caffemodel for the model to use'),
+        arg('--mean', nargs=3, metavar=('B_MEAN', 'G_MEAN', 'R_MEAN'),
+            default=(103.939, 116.779, 123.68),
+            help='the per-channel means of the model (BGR order)'),
+        arg('--save-every', metavar='N', type=int, default=0, help='save the image every n steps'),
+        arg('--seed', type=int, default=0, help='the random seed'),
+        arg('--div', metavar='FACTOR', type=int, default=1,
+            help='Ensure all images are divisible by FACTOR '
+                 '(can fix some GPU memory alignment issues)'),
+        arg('--jitter', action='store_true',
+            help='use slower but higher quality translation-invariant rendering'),
+        arg('--debug', action='store_true', help='enable debug messages'),
+    ])
 
     defaults = vars(parser.parse_args([]))
     config_args = {}
@@ -138,9 +115,9 @@ def parse_args(state_obj=None):
     args = {}
     args.update(defaults)
     args.update(config_args)
-    for arg, value in sysv_args.items():
-        if defaults[arg] != value:
-            args[arg] = value
+    for a, value in sysv_args.items():
+        if defaults[a] != value:
+            args[a] = value
     args.update(config2_args)
 
     args2 = AutocallNamespace(state_obj, **args)
