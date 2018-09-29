@@ -34,7 +34,7 @@ def parse_args(state_obj=None):
         arg('--content-image', '-ci', help='the content image'),
         arg('--style-images', '-si', nargs='+', default=[], metavar='STYLE_IMAGE',
             help='the style images'),
-        arg('--output_image', '-oi', help='the output image'),
+        arg('--output-image', '-oi', help='the output image'),
         arg('--init-image', '-ii', metavar='IMAGE', help='the initial image'),
         arg('--aux-image', '-ai', metavar='IMAGE', help='the auxiliary image'),
         arg('--config', type=Path, help='a Python source file containing configuration options'),
