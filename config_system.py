@@ -28,7 +28,7 @@ def add_args(parser, args):
 
 def parse_args(state_obj=None):
     """Parses command line arguments."""
-    parser = argparse.ArgumentParser(description=__doc__,
+    parser = argparse.ArgumentParser(description='Neural style transfer using Caffe.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     add_args(parser, [
         arg('--content-image', '-ci', help='the content image'),
