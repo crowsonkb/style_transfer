@@ -1,12 +1,12 @@
-matplotlib >= 2.0.0
-numpy >= 1.11.1
-Pillow >= 3.3.1
-prompt_toolkit >= 1.0.13
-PyWavelets >= 0.5.2
-shared-ndarray >= 1.1.1
-scipy >= 0.18.0
-six >= 1.10.0
+matplotlib>=2.0.0
+numpy>=1.11.1
+Pillow>=3.3.1
+prompt_toolkit>=1.0.13<2.0
+PyWavelets>=0.5.2
+shared-ndarray>=1.1.1
+scipy>=0.18.0
+six>=1.10.0
 
 # pycaffe dependencies
-protobuf >= 3.1.0
-scikit-image >= 0.12.3
+protobuf>=3.1.0
+scikit-image>=0.12.3
