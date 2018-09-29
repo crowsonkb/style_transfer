@@ -21,6 +21,7 @@ class arg:
     def __init__(self, *args, **kwargs):
         self.args, self.kwargs = args, kwargs
 
+
 def add_args(parser, args):
     for a in args:
         parser.add_argument(*a.args, **a.kwargs)
@@ -74,7 +75,7 @@ def parse_args(state_obj=None):
         arg('--p-weight', '-pw', type=ffloat, default=2, help='the p-norm regularizer factor'),
         arg('--p-power', '-pp', metavar='P', type=ffloat, default=6, help='the p-norm exponent'),
         arg('--aux-weight', '-aw', type=ffloat, default=10, help='the auxiliary image factor'),
-        arg('--content-layers', nargs='*', default=['conv4_2'],metavar='LAYER',
+        arg('--content-layers', nargs='*', default=['conv4_2'], metavar='LAYER',
             help='the layers to use for content'),
         arg('--style-layers', nargs='*', metavar='LAYER',
             default=['conv1_1', 'conv2_1', 'conv3_1', 'conv4_1', 'conv5_1'],
@@ -161,6 +162,7 @@ class AutocallNamespace:
 
     def __repr__(self):
         return 'Autocall' + repr(self.ns)
+
 
 CONFIG_GLOBALS = dict(math=math, np=np)
 
