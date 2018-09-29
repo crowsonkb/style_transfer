@@ -1,7 +1,6 @@
 """Numerical utilities."""
 
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from functools import partial
 import math
 
 import numpy as np
@@ -40,9 +39,9 @@ def p_norm(arr, p=2):
     """Returns the pth power of the p-norm and its gradient."""
     if p == 1:
         return np.sum(abs(arr)), np.sign(arr)
-    elif p == 2:
+    if p == 2:
         return np.sum(arr**2), 2 * arr
-    return np.sum(abs(arr)**p), p * np.sign(arr) * abs(arr)**(p-1)
+    return np.sum(abs(arr)**p), p * np.sign(arr) * abs(arr)**(p - 1)
 
 
 def normalize(arr):
@@ -117,8 +116,8 @@ def tv_norm(x, beta=2):
     x_diff = x - roll_by_1(x.copy(), -1, axis=2)
     y_diff = x - roll_by_1(x.copy(), -1, axis=1)
     grad_norm2 = x_diff**2 + y_diff**2 + EPS
-    loss = np.sum(grad_norm2**(beta/2))
-    dgrad_norm = (beta/2) * grad_norm2**(beta/2 - 1)
+    loss = np.sum(grad_norm2**(beta / 2))
+    dgrad_norm = (beta / 2) * grad_norm2**(beta / 2 - 1)
     dx_diff = 2 * x_diff * dgrad_norm
     dy_diff = 2 * y_diff * dgrad_norm
     grad = dx_diff + dy_diff
@@ -183,8 +182,8 @@ def _swt_norm(x, wavelet, level, p=2):
         coeffs = pywt.swt2(ch, wavelet, level)
         for a, _ in coeffs:
             a[:] = 0
-        inv.append(pywt.iswt2(coeffs, wavelet)[pw[1][0]:pw[1][0]+x.shape[1],
-                                               pw[2][0]:pw[2][0]+x.shape[2]])
+        inv.append(pywt.iswt2(coeffs, wavelet)[pw[1][0]:pw[1][0] + x.shape[1],
+                                               pw[2][0]:pw[2][0] + x.shape[2]])
     return p_norm(np.stack(inv), p)
 
 

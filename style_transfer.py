@@ -79,6 +79,7 @@ def setup_exceptions():
     except ImportError:
         pass
 
+
 logger = log_utils.setup_logger('style_transfer')
 
 
@@ -86,6 +87,7 @@ def set_thread_count(threads):
     """Sets the maximum number of MKL threads for this process."""
     if MKL_THREADS is not None:
         mkl.set_num_threads(max(1, threads))
+
 
 try:
     import mkl
@@ -115,7 +117,7 @@ class StatLogger:
             self.stats[-1]['time'] = timer() - self.start_time
 
     def dump(self):
-        with self.lock, open(RUN+'_log.csv', 'w', newline='') as f:
+        with self.lock, open(RUN + '_log.csv', 'w', newline='') as f:
             fields = ['iteration', 'scale', 'step', 'time']
             for row in self.stats:
                 for key in row:
@@ -127,6 +129,7 @@ class StatLogger:
 
     def __del__(self):
         self.dump()
+
 
 STATS = None
 
@@ -415,7 +418,7 @@ class CaffeModel:
     def eval_features_once(self, pool, layers, tile_size=512):
         """Computes the set of feature maps for an image."""
         img_size = np.array(self.img.shape[-2:])
-        ntiles = (img_size-1) // tile_size + 1
+        ntiles = (img_size - 1) // tile_size + 1
         tile_size = img_size // ntiles
         if np.prod(ntiles) > 1:
             print_('Using %dx%d tiles of size %dx%d.' %
@@ -555,10 +558,10 @@ class CaffeModel:
                 axpy(-lw * dd_weight[layer], normalize(self.data[layer]), self.diff[layer])
 
             # Run the model backward
-            if i+1 == len(layers):
+            if i + 1 == len(layers):
                 self.net.backward(start=layer)
             else:
-                self.net.backward(start=layer, end=layers[i+1])
+                self.net.backward(start=layer, end=layers[i + 1])
 
         return loss, self.diff['data']
 
@@ -568,7 +571,7 @@ class CaffeModel:
         loss = 0
         grad = np.zeros_like(self.img)
         img_size = np.array(self.img.shape[-2:])
-        ntiles = (img_size-1) // tile_size + 1
+        ntiles = (img_size - 1) // tile_size + 1
         tile_size = img_size // ntiles
 
         for y in range(ntiles[0]):
@@ -715,9 +718,9 @@ class StyleTransfer:
         old_img = self.model.img.copy()
         self.step += 1
 
-        for step in range(1, iterations+1):
-            STATE.step = step-1
-            STATS.update_new_it(scale=STATE.scale, step=step-1,
+        for step in range(1, iterations + 1):
+            STATE.step = step - 1
+            STATS.update_new_it(scale=STATE.scale, step=step - 1,
                                 content_h=self.model.img.shape[1],
                                 content_w=self.model.img.shape[2])
 
@@ -797,7 +800,7 @@ class StyleTransfer:
 
         steps = 0
         for i in range(len(sizes)):
-            steps += ARGS.iterations[min(i, len(ARGS.iterations)-1)]
+            steps += ARGS.iterations[min(i, len(ARGS.iterations) - 1)]
         callback.set_steps(steps)
 
         for i, size in enumerate(reversed(sizes)):
@@ -807,7 +810,7 @@ class StyleTransfer:
                     raise ValueError('All of the content images must be the same size')
                 content_scaled.append(resize_to_fit(image, size, scale_up=True))
                 w, h = content_scaled[0].size
-            print_('\nScale %d, image size %dx%d.\n' % (i+1, w, h))
+            print_('\nScale %d, image size %dx%d.\n' % (i + 1, w, h))
             style_scaled = []
             for image in style_images:
                 if ARGS.style_scale >= 32:
@@ -836,7 +839,7 @@ class StyleTransfer:
                 # after preprocess_image is called later
                 if ARGS.optimizer == 'adam':
                     self.optimizer = AdamOptimizer(
-                        self.model.img, step_size=ARGS.step_size, bp1=1-(1/ARGS.avg_window),
+                        self.model.img, step_size=ARGS.step_size, bp1=1 - (1 / ARGS.avg_window),
                         decay=ARGS.step_decay[0], power=ARGS.step_decay[1],
                         biased_g1=biased_g1)
                 elif ARGS.optimizer == 'lbfgs':
@@ -845,7 +848,7 @@ class StyleTransfer:
                     raise ValueError()
 
             params = self.model.img
-            iters_i = ARGS.iterations[min(i, len(ARGS.iterations)-1)]
+            iters_i = ARGS.iterations[min(i, len(ARGS.iterations) - 1)]
             output_image = self.transfer(iters_i, params, content_scaled, style_scaled,
                                          callback, **kwargs)
             output_raw = self.current_raw
@@ -960,10 +963,10 @@ def resize_to_fit(image, size, scale_up=False):
     new_w, new_h = w, h
     if w > h:
         new_w = size
-        new_h = int(round(size * h/w)) // ARGS.div * ARGS.div
+        new_h = int(round(size * h / w)) // ARGS.div * ARGS.div
     else:
         new_h = size
-        new_w = int(round(size * w/h)) // ARGS.div * ARGS.div
+        new_w = int(round(size * w / h)) // ARGS.div * ARGS.div
     return image.resize((new_w, new_h), Image.LANCZOS)
 
 
@@ -1018,6 +1021,7 @@ def init_model(resp_q, caffe_path, model, weights, mean):
     for layer in model.layers():
         shapes[layer] = model.data[layer].shape
     resp_q.put(shapes)
+
 
 VGG16_SHAPES = OrderedDict([('conv1_1', (64, 224, 224)),
                             ('conv1_2', (64, 224, 224)),
@@ -1156,6 +1160,7 @@ def main():
         transfer.current_output.save(output_image, pnginfo=png_info)
     time_spent = timer() - start_time
     print_('Run %s ending after %dm %.3fs.' % (RUN, time_spent // 60, time_spent % 60))
+
 
 if __name__ == '__main__':
     main()

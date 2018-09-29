@@ -1,5 +1,7 @@
 """A module for function minimization."""
 
+# pylint: disable=too-many-arguments, too-many-instance-attributes
+
 import numpy as np
 
 from num_utils import axpy, BILINEAR, dot, EPS, EWMA, resize, roll2
