@@ -18,9 +18,9 @@ class AdamOptimizer:
 
         self.i = 1
         self.xy = np.zeros(2, dtype=np.int32)
-        self.g1 = EWMA(b1, params.shape, correct_bias=not biased_g1)
-        self.g2 = EWMA(b2, params.shape)
-        self.p1 = EWMA(bp1, params.shape)
+        self.g1 = EWMA.like(params, b1, correct_bias=not biased_g1)
+        self.g2 = EWMA.like(params, b2)
+        self.p1 = EWMA.like(params, bp1)
 
     def update(self, opfunc):
         """Returns a step's parameter update given a loss/gradient evaluation function."""
