@@ -126,36 +126,6 @@ def tv_norm(x, beta=2):
     return loss, grad
 
 
-class EWMA:
-    """An exponentially weighted moving average with initialization bias correction."""
-    def __init__(self, shape=(), dtype=np.float64, beta=0.9, correct_bias=True):
-        self.beta = beta
-        self.beta_accum = 1 if correct_bias else 0
-        self.value = np.zeros(shape, dtype)
-
-    @classmethod
-    def like(cls, arr, beta=0.9, correct_bias=True):
-        """Creates a new EWMA with its shape and dtype like the specified array."""
-        return cls(arr.shape, arr.dtype, beta, correct_bias)
-
-    def get(self):
-        """Gets the current value of the running average."""
-        return self.value / (1 - self.beta_accum)
-
-    def get_est(self, datum):
-        """Estimates the next value of the running average given a datum, but does not update
-        the average."""
-        est_value = self.beta * self.value + (1 - self.beta) * datum
-        return est_value / (1 - self.beta_accum * self.beta)
-
-    def update(self, datum):
-        """Updates the running average with a new observation."""
-        self.beta_accum *= self.beta
-        self.value *= self.beta
-        self.value += (1 - self.beta) * datum
-        return self.get()
-
-
 def pad_width(shape, divisors):
     """Returns the amount to pad each axis of an array on in order to be divisible by its
     corresponding divisor. It is intended to be used to generate the 'pad_width' parameter for

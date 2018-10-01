@@ -2,9 +2,10 @@
 
 # pylint: disable=too-many-arguments, too-many-instance-attributes
 
+from average import EWMA
 import numpy as np
 
-from num_utils import axpy, BILINEAR, dot, EPS, EWMA, resize, roll2
+from num_utils import axpy, BILINEAR, dot, EPS, resize, roll2
 
 
 class AdamOptimizer:
