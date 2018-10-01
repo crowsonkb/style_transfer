@@ -20,6 +20,14 @@ function setWithDataURL(url, elem) {
 function wsConnect() {
     ws = new WebSocket("ws://" + window.location.host + "/websocket");
 
+    ws.onclose = () => {
+        let error = $("#error")[0];
+        error.innerText = "Disconnected from the backend.";
+        error.style.display = "initial";
+    };
+
+    ws.onerror = ws.onclose;
+
     ws.onmessage = (e) => {
         let msg = JSON.parse(e.data);
         setWithDataURL(msg.image, $("#image")[0]);

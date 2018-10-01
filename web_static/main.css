@@ -7,6 +7,15 @@ body {
     line-height: 1.25;
 }
 
-#content { margin: 0 8px; }
+#content {
+    margin: 0 8px;
+}
 
-.step-info { font-size: 90%; }
+#error {
+    color: rgb(192, 55, 55);
+    font-size: 90%;
+}
+
+#step-info {
+    font-size: 90%;
+}
