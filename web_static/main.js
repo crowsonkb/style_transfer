@@ -21,9 +21,9 @@ function wsConnect() {
     ws = new WebSocket("ws://" + window.location.host + "/websocket");
 
     ws.onclose = () => {
-        let error = $("#error")[0];
-        error.innerText = "Disconnected from the backend.";
-        error.style.display = "initial";
+        let status = $("#status")[0];
+        status.innerText = "Disconnected from the backend.";
+        status.style.display = "initial";
     };
 
     ws.onerror = ws.onclose;
@@ -37,6 +37,12 @@ function wsConnect() {
         $("#update-size")[0].innerText = msg.update_size.toFixed(2);
         $("#loss")[0].innerText = msg.loss.toExponential(6);
         $("#tv")[0].innerText = msg.tv.toFixed(2);
+        $("#status")[0].style.display = "none";
+    };
+
+    ws.onopen = () => {
+        let status = $("#status")[0];
+        status.innerText = "Waiting for the first iteration...";
     };
 }
 
