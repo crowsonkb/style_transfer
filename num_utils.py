@@ -26,7 +26,7 @@ def axpy(a, x, y):
     """Sets y = a*x + y for float a and float32 arrays x, y and returns y."""
     y_ = blas.saxpy(x.ravel(), y.ravel(), a=a).reshape(y.shape)
     if y is not y_:
-        y[:] = y_
+        y[...] = y_
     return y
 
 
@@ -54,7 +54,7 @@ def resize(a, hw, method=LANCZOS):
     """Resamples an image array in CxHxW format to a new HxW size. The interpolation is performed
     in floating point and the result dtype is numpy.float32."""
     def _resize(a, b):
-        b[:] = Image.fromarray(a).resize((hw[1], hw[0]), method)
+        b[...] = Image.fromarray(a).resize((hw[1], hw[0]), method)
 
     a = np.float32(a)
     if a.ndim == 2:
@@ -100,7 +100,7 @@ def roll2(arr, xy):
     """Translates an array in-place by the shift xy, wrapping at the edges."""
     if xy is None or (xy[0] == 0 and xy[1] == 0):
         return arr
-    arr[:] = np.roll(np.roll(arr, xy[0], -1), xy[1], -2)
+    arr[...] = np.roll(np.roll(arr, xy[0], -1), xy[1], -2)
     return arr
 
 
@@ -154,7 +154,7 @@ def _swt_norm(x, wavelet, level, p=2):
     for ch in x_pad:
         coeffs = pywt.swt2(ch, wavelet, level)
         for a, _ in coeffs:
-            a[:] = 0
+            a[...] = 0
         inv.append(pywt.iswt2(coeffs, wavelet)[pw[1][0]:pw[1][0] + x.shape[1],
                                                pw[2][0]:pw[2][0] + x.shape[2]])
     return p_norm(np.stack(inv), p)
@@ -169,7 +169,7 @@ def _swt_norm(x, wavelet, level, p=2):
 #         channels = list(ex.map(partial(pywt.swt2, wavelet=wavelet, level=level), x_pad))
 #         for coeffs in channels:
 #             for a, _ in coeffs:
-#                 a[:] = 0
+#                 a[...] = 0
 #         inv = np.stack(ex.map(partial(pywt.iswt2, wavelet=wavelet), channels))
 #     inv = inv[:, pw[1][0]:pw[1][0]+x.shape[1], pw[2][0]:pw[2][0]+x.shape[2]]
 #     return np.sum(inv**2), inv * 2

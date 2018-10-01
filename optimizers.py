@@ -126,10 +126,10 @@ class LBFGSOptimizer:
             return
         self.xy += xy
         if self.grad is not None:
-            self.grad[:] = roll2(self.grad, xy)
+            roll2(self.grad, xy)
         for s, y in zip(self.sk, self.yk):
-            s[:] = roll2(s, xy)
-            y[:] = roll2(y, xy)
+            roll2(s, xy)
+            roll2(y, xy)
 
     def set_params(self, last_iterate):
         """Sets params to the supplied array and clears the L-BFGS memory."""

@@ -756,7 +756,7 @@ class StyleTransfer:
 
             # Compute update size statistic
             update_size = np.mean(abs(avg_img - old_img))
-            old_img[:] = avg_img
+            old_img[...] = avg_img
 
             # Compute total variation statistic
             x_diff = avg_img - np.roll(avg_img, -1, axis=-1)
