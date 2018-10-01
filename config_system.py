@@ -85,7 +85,7 @@ def parse_args(state_obj=None):
         arg('--port', '-p', type=int, default=8000, help='the port to use for the http server'),
         arg('--display', default='browser', choices=['browser', 'gui', 'none'],
             help='the display method to use'),
-        arg('--hidpi', action='store_true', help='display the image at 2x scale in the browser'),
+        arg('--browser', default=None, help='the web browser to open the web interface in'),
         arg('--prompt', action='store_true', help='enable the experimental prompt'),
         arg('--model', default='vgg19.prototxt',
             help='the Caffe deploy.prototxt for the model to use'),

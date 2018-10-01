@@ -1,0 +1,12 @@
+a:link, a:visited, a:hover, a:active { color: rgb(95, 95, 95); }
+
+body {
+    background-color: rgb(55, 55, 55);
+    color: rgb(224, 224, 224);
+    font-family: -apple-system, BlinkMacSystemFont, "Lucida Grande", Arial, sans-serif;
+    line-height: 1.25;
+}
+
+#content { margin: 0 8px; }
+
+.step-info { font-size: 90%; }

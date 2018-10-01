@@ -1,3 +1,5 @@
+aiohttp>=3.4.4
+aiohttp_index>=0.1
 average>=1.0
 matplotlib>=2.0.0
 numpy>=1.11.1

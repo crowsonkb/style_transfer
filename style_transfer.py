@@ -18,6 +18,7 @@ import json
 import multiprocessing as mp
 import os
 from pathlib import Path
+import queue
 import sys
 import threading
 import time
@@ -36,6 +37,7 @@ import log_utils
 from num_utils import axpy, gram_matrix, norm2, normalize, p_norm, resize, roll2, tv_norm, swt_norm
 from optimizers import AdamOptimizer, LBFGSOptimizer
 import prompt
+import web_interface
 
 
 ARGS = None
@@ -126,9 +128,6 @@ class StatLogger:
             writer = csv.DictWriter(f, fieldnames=fields)
             writer.writeheader()
             writer.writerows(self.stats)
-
-    def __del__(self):
-        self.dump()
 
 
 STATS = None
@@ -771,7 +770,8 @@ class StyleTransfer:
             self.current_output = self.model.get_image(avg_img)
 
             if callback is not None:
-                msg = callback(step=step, update_size=update_size, loss=loss, tv_loss=tv_loss)
+                msg = callback(step=step, update_size=update_size, loss=loss, tv_loss=tv_loss,
+                               image=self.current_output)
                 if isinstance(msg, prompt.Skip):
                     break
 
@@ -799,7 +799,8 @@ class StyleTransfer:
         steps = 0
         for i in range(len(sizes)):
             steps += ARGS.iterations[min(i, len(ARGS.iterations) - 1)]
-        callback.set_steps(steps)
+        if callback is not None:
+            callback.set_steps(steps)
 
         for i, size in enumerate(reversed(sizes)):
             content_scaled = []
@@ -854,6 +855,9 @@ class StyleTransfer:
         return output_image
 
 
+ProgressEvent = namedtuple('ProgressEvent', 'step steps time update_size loss tv image')
+
+
 class Progress:
     """A helper class for keeping track of progress."""
     prev_t = None
@@ -863,15 +867,18 @@ class Progress:
     loss = np.nan
     tv_loss = np.nan
 
-    def __init__(self, transfer, url=None, steps=-1, save_every=0, cli=None, callback=None):
+    def __init__(self, transfer, url=None, browser=None, steps=-1, save_every=0, web_if=None,
+                 cli=None, callback=None):
         self.transfer = transfer
         self.url = url
+        self.browser = browser
         self.steps = 0
         self.save_every = save_every
+        self.web_if = web_if
         self.cli = cli
         self.callback = callback
 
-    def __call__(self, step=-1, update_size=np.nan, loss=np.nan, tv_loss=np.nan):
+    def __call__(self, step=-1, update_size=np.nan, loss=np.nan, tv_loss=np.nan, image=None):
         this_t = timer()
         self.step += 1
         self.update_size = update_size
@@ -881,75 +888,25 @@ class Progress:
             self.transfer.current_output.save(RUN + '_out_%04d.png' % self.step)
         if self.step == 1:
             if self.url:
-                webbrowser.open(self.url)
+                if self.browser is None:
+                    webbrowser.open(self.url)
+                else:
+                    webbrowser.get(self.browser).open(self.url)
             if self.cli:
                 self.cli.start()
         else:
             self.t = this_t - self.prev_t
         print_('Step %d, time: %.2f s, update: %.2f, loss: %e, tv: %.2f' %
                (step, self.t, update_size, loss, tv_loss), flush=True)
+        self.web_if.put_event(
+            ProgressEvent(self.step, self.steps, self.t, update_size, loss, tv_loss, image)
+        )
         self.prev_t = this_t
         if self.callback:
             return self.callback()
 
     def set_steps(self, steps):
         self.steps = steps
-
-
-class ProgressServer(ThreadingMixIn, HTTPServer):
-    """HTTP server class."""
-    transfer = None
-    progress = None
-    hidpi = False
-
-
-class ProgressHandler(BaseHTTPRequestHandler):
-    """Serves intermediate outputs over HTTP."""
-    index = """
-    <meta http-equiv="refresh" content="5">
-    <style>
-    body {
-        background-color: rgb(55, 55, 55);
-        color: rgb(255, 255, 255);
-    }
-    </style>
-    <h1>Style transfer</h1>
-    <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
-    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss)e,
-    tv: %(tv_loss).2f
-    """
-
-    def do_GET(self):
-        """Retrieves index.html or an intermediate output."""
-        if self.path == '/':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-            scale = 1
-            if self.server.hidpi:
-                scale = 2
-            self.wfile.write((self.index % {
-                'step': self.server.progress.step,
-                'steps': self.server.progress.steps,
-                't': self.server.progress.t,
-                'update_size': self.server.progress.update_size,
-                'loss': self.server.progress.loss,
-                'tv_loss': self.server.progress.tv_loss,
-                'w': self.server.transfer.current_output.size[0] / scale,
-                'h': self.server.transfer.current_output.size[1] / scale,
-            }).encode())
-        elif self.path == '/out.png':
-            self.send_response(200)
-            self.send_header('Content-type', 'image/png')
-            self.end_headers()
-            buf = io.BytesIO()
-            self.server.transfer.current_output.save(buf, format='png')
-            self.wfile.write(buf.getvalue())
-        else:
-            self.send_error(404)
-
-    def log_message(*args, **kwargs):
-        pass
 
 
 def resize_to_fit(image, size, scale_up=False):
@@ -1120,34 +1077,31 @@ def main():
         cli = prompt.Prompt(RUN, STATE)
         cli_resp = prompt.PromptResponder(cli.q, ARGS)
 
-    server_address = ('', ARGS.port)
     url = 'http://127.0.0.1:%d/' % ARGS.port
-    server = ProgressServer(server_address, ProgressHandler)
-    server.transfer = transfer
-    server.hidpi = ARGS.hidpi
     progress_args = {}
     if ARGS.display == 'browser' and 'no_browser' not in ARGS:
         progress_args['url'] = url
+        progress_args['browser'] = ARGS.browser
     steps = 0
-    server.progress = Progress(
-        transfer, steps=steps, save_every=ARGS.save_every, cli=cli, callback=cli_resp,
-        **progress_args)
-    th = threading.Thread(target=server.serve_forever)
-    th.daemon = True
+    web_if = web_interface.WebInterface()
+    th = threading.Thread(target=web_if.run, name='web_interface', args=(ARGS.port,), daemon=True)
     th.start()
     print_('\nWatch the progress at: %s\n' % url)
+    progress = Progress(
+        transfer, steps=steps, save_every=ARGS.save_every, web_if=web_if, cli=cli,
+        callback=cli_resp, **progress_args)
 
     np.random.seed(ARGS.seed)
     try:
         transfer.transfer_multiscale(
-            [content_image], style_images, initial_image, aux_image, callback=server.progress)
+            [content_image], style_images, initial_image, aux_image, callback=progress)
     except (EOFError, KeyboardInterrupt):
         print_()
     finally:
+        STATS.dump()
         if ARGS.prompt:
             cli.stop()
 
-    STATS.dump()
     if transfer.current_output:
         output_image = ARGS.output_image
         if not output_image:
