@@ -48,6 +48,7 @@ def parse_args(state_obj=None):
         arg('--size', '-s', type=int, default=256, help='the output size'),
         arg('--min-size', type=int, default=182, help='the minimum scale\'s size'),
         arg('--style-scale', '-ss', type=ffloat, default=1, help='the style scale factor'),
+        arg('--max-style-size', type=int, help='the maximum style size'),
         arg('--style-scale-up', default=False, action='store_true',
             help='allow scaling style images up'),
         arg('--tile-size', type=int, default=512, help='the maximum rendering tile size'),

@@ -815,7 +815,10 @@ class StyleTransfer:
                 if ARGS.style_scale >= 32:
                     style_scaled.append(resize_to_fit(image, ARGS.style_scale, scale_up=True))
                 else:
-                    style_scaled.append(resize_to_fit(image, round(size * ARGS.style_scale),
+                    style_size = round(size * ARGS.style_scale)
+                    if ARGS.max_style_size is not None:
+                        style_size = min(style_size, ARGS.max_style_size)
+                    style_scaled.append(resize_to_fit(image, style_size,
                                                       scale_up=ARGS.style_scale_up))
             if aux_image:
                 aux_scaled = aux_image.resize(content_scaled[0].size, Image.LANCZOS)
