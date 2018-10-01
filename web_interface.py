@@ -69,7 +69,6 @@ async def process_events(app):
         await send_message(app, event._asdict())
 
 
-
 class WebInterface:
     def __init__(self):
         self.app = None
