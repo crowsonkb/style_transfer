@@ -762,18 +762,16 @@ class StyleTransfer:
             # Compute total variation statistic
             x_diff = avg_img - np.roll(avg_img, -1, axis=-1)
             y_diff = avg_img - np.roll(avg_img, -1, axis=-2)
-            tv_loss = np.mean(x_diff**2 + y_diff**2)
+            tv_loss = np.sqrt(np.mean(x_diff**2 + y_diff**2))
 
-            STATS.update_current_it(update_size=update_size, loss=loss / self.model.img.size,
-                                    tv_norm=tv_loss)
+            STATS.update_current_it(update_size=update_size, loss=loss, tv_norm=tv_loss)
 
             # Record current output
             self.current_raw = avg_img
             self.current_output = self.model.get_image(avg_img)
 
             if callback is not None:
-                msg = callback(step=step, update_size=update_size, loss=loss / self.model.img.size,
-                               tv_loss=tv_loss)
+                msg = callback(step=step, update_size=update_size, loss=loss, tv_loss=tv_loss)
                 if isinstance(msg, prompt.Skip):
                     break
 
@@ -888,7 +886,7 @@ class Progress:
                 self.cli.start()
         else:
             self.t = this_t - self.prev_t
-        print_('Step %d, time: %.2f s, update: %.2f, loss: %g, tv: %.1f' %
+        print_('Step %d, time: %.2f s, update: %.2f, loss: %e, tv: %.2f' %
                (step, self.t, update_size, loss, tv_loss), flush=True)
         self.prev_t = this_t
         if self.callback:
@@ -917,8 +915,8 @@ class ProgressHandler(BaseHTTPRequestHandler):
     </style>
     <h1>Style transfer</h1>
     <img src="/out.png" id="out" width="%(w)d" height="%(h)d">
-    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss)g,
-    tv: %(tv_loss).1f
+    <p>Step %(step)d/%(steps)d, time: %(t).2f s/step, update: %(update_size).2f, loss: %(loss)e,
+    tv: %(tv_loss).2f
     """
 
     def do_GET(self):
