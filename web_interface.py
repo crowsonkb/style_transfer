@@ -27,10 +27,12 @@ class Iterate:
     image: Image.Image
 
 
-def pil_to_data_url(image):
-    header = 'data:image/png;base64,'
+# pylint: disable=redefined-builtin
+def pil_to_data_url(image, format='png', **kwargs):
+    mime_types = {'jpeg': 'image/jpeg', 'png': 'image/png'}
+    header = f'data:{mime_types[format]};base64,'
     buf = io.BytesIO()
-    image.save(buf, format='png')
+    image.save(buf, format=format, **kwargs)
     return header + binascii.b2a_base64(buf.getvalue()).decode()
 
 
@@ -40,8 +42,6 @@ class JSONEncoder(json.JSONEncoder):
             return float(o)
         if isinstance(o, np.integer):
             return int(o)
-        if isinstance(o, Image.Image):
-            return pil_to_data_url(o)
         return super().default(o)
 
 
@@ -81,6 +81,8 @@ async def process_events(app):
         event = await app.event_queue.get()
         msg = asdict(event)
         msg['_type'] = type(event).__name__
+        if 'image' in msg:
+            msg['image'] = pil_to_data_url(msg['image'], **app.image_encode_settings)
         await send_message(app, msg)
 
 
@@ -96,7 +98,9 @@ class WebInterface:
 
         self.app = web.Application(middlewares=[IndexMiddleware()], loop=self.loop)
         self.app.event_queue = asyncio.Queue()
+        self.app.image_encode_settings = {'format': 'png'}
         self.app.wss = []
+
         self.app.task_process_events = self.loop.create_task(process_events(self.app))
 
         self.app.router.add_route('GET', '/websocket', handle_websocket)
