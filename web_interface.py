@@ -1,5 +1,6 @@
 import asyncio
 import binascii
+from dataclasses import asdict, dataclass
 import io
 import json
 from pathlib import Path
@@ -12,6 +13,18 @@ from PIL import Image
 
 MODULE_DIR = Path(__file__).parent.resolve()
 STATIC_PATH = MODULE_DIR / 'web_static'
+
+
+@dataclass
+class Iterate:
+    """A message containing a new iterate."""
+    step: int
+    steps: int
+    time: float
+    update_size: float
+    loss: float
+    tv: float
+    image: Image.Image
 
 
 def pil_to_data_url(image):
@@ -66,7 +79,9 @@ async def send_message(app, msg):
 async def process_events(app):
     while True:
         event = await app.event_queue.get()
-        await send_message(app, event._asdict())
+        msg = asdict(event)
+        msg['_type'] = type(event).__name__
+        await send_message(app, msg)
 
 
 class WebInterface:

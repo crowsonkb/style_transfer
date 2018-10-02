@@ -1,6 +1,7 @@
 aiohttp>=3.4.4
 aiohttp_index>=0.1
 average>=1.0
+dataclasses>=0.6;python_version<"3.7"
 matplotlib>=2.0.0
 numpy>=1.11.1
 Pillow>=3.3.1

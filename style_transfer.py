@@ -850,9 +850,6 @@ class StyleTransfer:
         return output_image
 
 
-ProgressEvent = namedtuple('ProgressEvent', 'step steps time update_size loss tv image')
-
-
 class Progress:
     """A helper class for keeping track of progress."""
     prev_t = None
@@ -894,7 +891,7 @@ class Progress:
         print('Step %d, time: %.2f s, update: %.2f, loss: %e, tv: %.2f' %
                (step, self.t, update_size, loss, tv_loss), flush=True)
         self.web_if.put_event(
-            ProgressEvent(self.step, self.steps, self.t, update_size, loss, tv_loss, image)
+            web_interface.Iterate(self.step, self.steps, self.t, update_size, loss, tv_loss, image)
         )
         self.prev_t = this_t
         if self.callback:
