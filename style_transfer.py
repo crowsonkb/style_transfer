@@ -27,10 +27,6 @@ import webbrowser
 import numpy as np
 from PIL import Image, PngImagePlugin
 from shared_ndarray import SharedNDArray
-import six
-from six import print_
-from six.moves.BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
-from six.moves.socketserver import ThreadingMixIn
 
 from config_system import ffloat, parse_args
 import log_utils
@@ -42,12 +38,8 @@ import web_interface
 
 ARGS = None
 
-if six.PY2:
-    CTX = mp
-    timer = time.time
-else:
-    CTX = mp.get_context('fork')
-    timer = time.perf_counter
+# Use forking mode for multiprocessing
+CTX = mp.get_context('fork')
 
 # Maximum number of MKL threads between all processes
 MKL_THREADS = None
@@ -113,10 +105,10 @@ class StatLogger:
     def update_new_it(self, **kwargs):
         with self.lock:
             if self.start_time is None:
-                self.start_time = timer()
+                self.start_time = time.perf_counter()
             self.stats.append(kwargs)
             self.stats[-1]['iteration'] = len(self.stats) - 1
-            self.stats[-1]['time'] = timer() - self.start_time
+            self.stats[-1]['time'] = time.perf_counter() - self.start_time
 
     def dump(self):
         with self.lock, open(RUN + '_log.csv', 'w', newline='') as f:
@@ -420,7 +412,7 @@ class CaffeModel:
         ntiles = (img_size - 1) // tile_size + 1
         tile_size = img_size // ntiles
         if np.prod(ntiles) > 1:
-            print_('Using %dx%d tiles of size %dx%d.' %
+            print('Using %dx%d tiles of size %dx%d.' %
                    (ntiles[1], ntiles[0], tile_size[1], tile_size[0]))
         features = {}
         for layer in layers:
@@ -484,7 +476,7 @@ class CaffeModel:
 
         # Prepare Gram matrices from style images
         if roll is None:
-            print_('Preprocessing the style image(s)...')
+            print('Preprocessing the style image(s)...')
         for image in style_images:
             grams = {}
             self.set_image(image)
@@ -496,7 +488,7 @@ class CaffeModel:
 
         # Prepare feature maps from content image
         if roll is None:
-            print_('Preprocessing the content image(s)...')
+            print('Preprocessing the content image(s)...')
             n = 10
         else:
             n = 1
@@ -785,7 +777,7 @@ class StyleTransfer:
         """Performs style transfer from style_image to content_image at the given sizes."""
         output_image = None
         output_raw = None
-        print_('Starting %d worker process(es).' % len(ARGS.devices))
+        print('Starting %d worker process(es).' % len(ARGS.devices))
         self.pool = TileWorkerPool(self.model, ARGS.devices, ARGS.caffe_path)
 
         size = ARGS.size
@@ -809,7 +801,7 @@ class StyleTransfer:
                     raise ValueError('All of the content images must be the same size')
                 content_scaled.append(resize_to_fit(image, size, scale_up=True))
                 w, h = content_scaled[0].size
-            print_('\nScale %d, image size %dx%d.\n' % (i + 1, w, h))
+            print('\nScale %d, image size %dx%d.\n' % (i + 1, w, h))
             style_scaled = []
             for image in style_images:
                 if ARGS.style_scale >= 32:
@@ -882,7 +874,7 @@ class Progress:
         self.callback = callback
 
     def __call__(self, step=-1, update_size=np.nan, loss=np.nan, tv_loss=np.nan, image=None):
-        this_t = timer()
+        this_t = time.perf_counter()
         self.step += 1
         self.update_size = update_size
         self.loss = loss
@@ -899,7 +891,7 @@ class Progress:
                 self.cli.start()
         else:
             self.t = this_t - self.prev_t
-        print_('Step %d, time: %.2f s, update: %.2f, loss: %e, tv: %.2f' %
+        print('Step %d, time: %.2f s, update: %.2f, loss: %e, tv: %.2f' %
                (step, self.t, update_size, loss, tv_loss), flush=True)
         self.web_if.put_event(
             ProgressEvent(self.step, self.steps, self.t, update_size, loss, tv_loss, image)
@@ -928,7 +920,7 @@ def resize_to_fit(image, size, scale_up=False):
     return image.resize((new_w, new_h), Image.LANCZOS)
 
 
-def print_args():
+def printargs():
     """Prints out all command-line parameters."""
     bg = terminal_bg()
     if bg is True:
@@ -936,7 +928,7 @@ def print_args():
     elif bg is False:
         style = 'monokai'
 
-    pprint = print_
+    pprint = print
     try:
         if bg is not None:
             import pygments
@@ -946,12 +938,12 @@ def print_args():
                              formatter=Terminal256Formatter(style=style), outfile=sys.stdout)
     except ImportError:
         pass
-    print_('Parameters:')
+    print('Parameters:')
     for key in sorted(ARGS):
         v = repr(getattr(ARGS, key))
-        print_('% 14s: ' % key, end='')
+        print('% 14s: ' % key, end='')
         pprint(v)
-    print_()
+    print()
 
 
 def get_image_comment():
@@ -1029,17 +1021,17 @@ def main():
 
     ARGS = parse_args(STATE)
     setup_exceptions()
-    print_args()
+    printargs()
 
-    start_time = timer()
+    start_time = time.perf_counter()
     now = datetime.now()
     RUN = '%02d%02d%02d_%02d%02d%02d' % \
         (now.year % 100, now.month, now.day, now.hour, now.minute, now.second)
     STATS = StatLogger()
-    print_('Run %s started.' % RUN)
+    print('Run %s started.' % RUN)
 
     if MKL_THREADS is not None:
-        print_('MKL detected, %d threads maximum.' % MKL_THREADS)
+        print('MKL detected, %d threads maximum.' % MKL_THREADS)
 
     os.environ['GLOG_minloglevel'] = '2'
     if ARGS.caffe_path:
@@ -1050,19 +1042,19 @@ def main():
     elif Path(ARGS.model).name in ('vgg19.prototxt', 'vgg19_avgpool.prototxt'):
         shapes = VGG19_SHAPES
     else:
-        print_('Loading %s.' % ARGS.weights)
+        print('Loading %s.' % ARGS.weights)
         resp_q = CTX.Queue()
         CTX.Process(target=init_model,
                     args=(resp_q, ARGS.caffe_path, ARGS.model, ARGS.weights, ARGS.mean)).start()
         shapes = resp_q.get()
 
-    print_('Initializing %s.' % ARGS.weights)
+    print('Initializing %s.' % ARGS.weights)
     model = CaffeModel(ARGS.model, ARGS.weights, ARGS.mean, shapes=shapes, placeholder=True)
     transfer = StyleTransfer(model)
     if ARGS.list_layers:
-        print_('Layers:')
+        print('Layers:')
         for layer, shape in model.shapes.items():
-            print_('% 25s %s' % (layer, shape))
+            print('% 25s %s' % (layer, shape))
         sys.exit(0)
 
     content_image = Image.open(ARGS.content_image).convert('RGB')
@@ -1089,7 +1081,7 @@ def main():
     web_if = web_interface.WebInterface()
     th = threading.Thread(target=web_if.run, name='web_interface', args=(ARGS.port,), daemon=True)
     th.start()
-    print_('\nWatch the progress at: %s\n' % url)
+    print('\nWatch the progress at: %s\n' % url)
     progress = Progress(
         transfer, steps=steps, save_every=ARGS.save_every, web_if=web_if, cli=cli,
         callback=cli_resp, **progress_args)
@@ -1099,7 +1091,7 @@ def main():
         transfer.transfer_multiscale(
             [content_image], style_images, initial_image, aux_image, callback=progress)
     except (EOFError, KeyboardInterrupt):
-        print_()
+        print()
     finally:
         STATS.dump()
         if ARGS.prompt:
@@ -1109,12 +1101,12 @@ def main():
         output_image = ARGS.output_image
         if not output_image:
             output_image = RUN + '_out.png'
-        print_('Saving output as %s.' % output_image)
+        print('Saving output as %s.' % output_image)
         png_info = PngImagePlugin.PngInfo()
         png_info.add_itxt('Comment', get_image_comment())
         transfer.current_output.save(output_image, pnginfo=png_info)
-    time_spent = timer() - start_time
-    print_('Run %s ending after %dm %.3fs.' % (RUN, time_spent // 60, time_spent % 60))
+    time_spent = time.perf_counter() - start_time
+    print('Run %s ending after %dm %.3fs.' % (RUN, time_spent // 60, time_spent % 60))
 
 
 if __name__ == '__main__':

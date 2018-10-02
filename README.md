@@ -5,7 +5,7 @@ Data-parallel image stylization using Caffe. Implements [A Neural Algorithm of A
 Dependencies:
 - [Python](https://www.python.org) 3.6+
 - [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 3.6+
-- Python packages [aiohttp](https://aiohttp.readthedocs.io/en/stable/), [aiohttp_index](https://github.com/crowsonkb/aiohttp_index), [average](https://github.com/crowsonkb/average), [matplotlib](http://matplotlib.org), [numpy](http://www.numpy.org), [Pillow](https://python-pillow.org), [scipy](http://www.scipy.org), [shared_ndarray](https://github.com/crowsonkb/shared_ndarray), and [six](https://pythonhosted.org/six/)
+- Python packages [aiohttp](https://aiohttp.readthedocs.io/en/stable/), [aiohttp_index](https://github.com/crowsonkb/aiohttp_index), [average](https://github.com/crowsonkb/average), [matplotlib](http://matplotlib.org), [numpy](http://www.numpy.org), [Pillow](https://python-pillow.org), [scipy](http://www.scipy.org), and [shared_ndarray](https://github.com/crowsonkb/shared_ndarray).
 
 The current preferred Python distribution for `style_transfer` is [Anaconda](https://www.continuum.io/downloads) (Python 3.6+ version). `style_transfer` will run faster with Anaconda than with other Python distributions due to its inclusion of the [MKL](https://software.intel.com/en-us/intel-mkl) BLAS (mathematics) library. In addition, if you are running Caffe without a GPU, `style_transfer` will run a great deal faster if compiled with MKL (`BLAS := mkl` in `Makefile.config`).
 
