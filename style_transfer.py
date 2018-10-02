@@ -9,7 +9,7 @@
 from __future__ import division
 
 from argparse import Namespace
-from collections import namedtuple, OrderedDict
+from collections import namedtuple
 import csv
 from datetime import datetime
 from functools import partial
@@ -967,52 +967,56 @@ def init_model(resp_q, caffe_path, model, weights, mean):
     import caffe
     caffe.set_mode_cpu()
     model = CaffeModel(model, weights, mean)
-    shapes = OrderedDict()
+    shapes = {}
     for layer in model.layers():
         shapes[layer] = model.data[layer].shape
     resp_q.put(shapes)
 
 
-VGG16_SHAPES = OrderedDict([('conv1_1', (64, 224, 224)),
-                            ('conv1_2', (64, 224, 224)),
-                            ('pool1', (64, 112, 112)),
-                            ('conv2_1', (128, 112, 112)),
-                            ('conv2_2', (128, 112, 112)),
-                            ('pool2', (128, 56, 56)),
-                            ('conv3_1', (256, 56, 56)),
-                            ('conv3_2', (256, 56, 56)),
-                            ('conv3_3', (256, 56, 56)),
-                            ('pool3', (256, 28, 28)),
-                            ('conv4_1', (512, 28, 28)),
-                            ('conv4_2', (512, 28, 28)),
-                            ('conv4_3', (512, 28, 28)),
-                            ('pool4', (512, 14, 14)),
-                            ('conv5_1', (512, 14, 14)),
-                            ('conv5_2', (512, 14, 14)),
-                            ('conv5_3', (512, 14, 14)),
-                            ('pool5', (512, 7, 7))])
+VGG16_SHAPES = {
+    'conv1_1': (64, 224, 224),
+    'conv1_2': (64, 224, 224),
+    'pool1': (64, 112, 112),
+    'conv2_1': (128, 112, 112),
+    'conv2_2': (128, 112, 112),
+    'pool2': (128, 56, 56),
+    'conv3_1': (256, 56, 56),
+    'conv3_2': (256, 56, 56),
+    'conv3_3': (256, 56, 56),
+    'pool3': (256, 28, 28),
+    'conv4_1': (512, 28, 28),
+    'conv4_2': (512, 28, 28),
+    'conv4_3': (512, 28, 28),
+    'pool4': (512, 14, 14),
+    'conv5_1': (512, 14, 14),
+    'conv5_2': (512, 14, 14),
+    'conv5_3': (512, 14, 14),
+    'pool5': (512, 7, 7),
+}
 
-VGG19_SHAPES = OrderedDict([('conv1_1', (64, 224, 224)),
-                            ('conv1_2', (64, 224, 224)),
-                            ('pool1', (64, 112, 112)),
-                            ('conv2_1', (128, 112, 112)),
-                            ('conv2_2', (128, 112, 112)),
-                            ('pool2', (128, 56, 56)),
-                            ('conv3_1', (256, 56, 56)),
-                            ('conv3_2', (256, 56, 56)),
-                            ('conv3_3', (256, 56, 56)),
-                            ('conv3_4', (256, 56, 56)),
-                            ('pool3', (256, 28, 28)),
-                            ('conv4_1', (512, 28, 28)),
-                            ('conv4_2', (512, 28, 28)),
-                            ('conv4_3', (512, 28, 28)),
-                            ('conv4_4', (512, 28, 28)),
-                            ('pool4', (512, 14, 14)),
-                            ('conv5_1', (512, 14, 14)),
-                            ('conv5_2', (512, 14, 14)),
-                            ('conv5_3', (512, 14, 14)),
-                            ('conv5_4', (512, 14, 14)),
-                            ('pool5', (512, 7, 7))])
+VGG19_SHAPES = {
+    'conv1_1': (64, 224, 224),
+    'conv1_2': (64, 224, 224),
+    'pool1': (64, 112, 112),
+    'conv2_1': (128, 112, 112),
+    'conv2_2': (128, 112, 112),
+    'pool2': (128, 56, 56),
+    'conv3_1': (256, 56, 56),
+    'conv3_2': (256, 56, 56),
+    'conv3_3': (256, 56, 56),
+    'conv3_4': (256, 56, 56),
+    'pool3': (256, 28, 28),
+    'conv4_1': (512, 28, 28),
+    'conv4_2': (512, 28, 28),
+    'conv4_3': (512, 28, 28),
+    'conv4_4': (512, 28, 28),
+    'pool4': (512, 14, 14),
+    'conv5_1': (512, 14, 14),
+    'conv5_2': (512, 14, 14),
+    'conv5_3': (512, 14, 14),
+    'conv5_4': (512, 14, 14),
+    'pool5': (512, 7, 7),
+}
 
 
 def main():
