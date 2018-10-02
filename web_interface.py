@@ -5,11 +5,11 @@ import io
 import json
 from pathlib import Path
 
-import aiohttp
 from aiohttp import web
 from aiohttp_index import IndexMiddleware
 import numpy as np
 from PIL import Image
+
 
 MODULE_DIR = Path(__file__).parent.resolve()
 STATIC_PATH = MODULE_DIR / 'web_static'
@@ -36,6 +36,7 @@ def pil_to_data_url(image, format='png', **kwargs):
     return header + binascii.b2a_base64(buf.getvalue()).decode()
 
 
+# pylint: disable=method-hidden
 class JSONEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, np.floating):
