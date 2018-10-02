@@ -1091,6 +1091,7 @@ def main():
     try:
         transfer.transfer_multiscale(
             [content_image], style_images, initial_image, aux_image, callback=progress)
+        web_if.put_event(web_interface.IterationFinished())
     except (EOFError, KeyboardInterrupt):
         print()
     finally:

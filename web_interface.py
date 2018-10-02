@@ -27,6 +27,11 @@ class Iterate:
     image: Image.Image
 
 
+@dataclass
+class IterationFinished:
+    """A message to notify the client that iteration has stopped."""
+
+
 # pylint: disable=redefined-builtin
 def pil_to_data_url(image, format='png', **kwargs):
     mime_types = {'jpeg': 'image/jpeg', 'png': 'image/png'}

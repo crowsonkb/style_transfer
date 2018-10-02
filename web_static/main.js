@@ -1,3 +1,4 @@
+let iterationFinished = false;
 let ws;
 
 
@@ -21,23 +22,36 @@ function wsConnect() {
     ws = new WebSocket("ws://" + window.location.host + "/websocket");
 
     ws.onclose = () => {
-        let status = $("#status")[0];
-        status.innerText = "Disconnected from the backend.";
-        status.style.display = "initial";
+        if (!iterationFinished) {
+            let status = $("#status")[0];
+            status.innerText = "Disconnected from the backend.";
+            status.style.display = "";
+        }
     };
 
     ws.onerror = ws.onclose;
 
     ws.onmessage = (e) => {
         let msg = JSON.parse(e.data);
-        setWithDataURL(msg.image, $("#image")[0]);
-        $("#step")[0].innerText = msg.step;
-        $("#steps")[0].innerText = msg.steps;
-        $("#time")[0].innerText = msg.time.toFixed(2);
-        $("#update-size")[0].innerText = msg.update_size.toFixed(2);
-        $("#loss")[0].innerText = msg.loss.toExponential(6);
-        $("#tv")[0].innerText = msg.tv.toFixed(2);
-        $("#status")[0].style.display = "none";
+
+        switch (msg._type) {
+        case "Iterate":
+            setWithDataURL(msg.image, $("#image")[0]);
+            $("#step")[0].innerText = msg.step;
+            $("#steps")[0].innerText = msg.steps;
+            $("#time")[0].innerText = msg.time.toFixed(2);
+            $("#update-size")[0].innerText = msg.update_size.toFixed(2);
+            $("#loss")[0].innerText = msg.loss.toExponential(6);
+            $("#tv")[0].innerText = msg.tv.toFixed(2);
+            $("#status")[0].style.display = "none";
+            break;
+
+        case "IterationFinished":
+            iterationFinished = true;
+            $("#status")[0].innerText = "Iteration finished.";
+            $("#status")[0].style.display = "";
+            break;
+        }
     };
 
     ws.onopen = () => {
