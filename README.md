@@ -57,8 +57,9 @@ The exact name of the Boost.Python library will differ on Linux but the rest sho
 On macOS, you can install Python 3 and Boost.Python using [Homebrew](http://brew.sh):
 
 ```
-brew install python3
-brew install boost-python
+brew install python
+brew install numpy
+brew install boost-python3
 ```
 
 Then insert these lines into Caffe's `Makefile.config` to build against the Homebrew-provided Python 3.7:
