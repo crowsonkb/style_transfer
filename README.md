@@ -3,11 +3,11 @@
 Data-parallel image stylization using Caffe. Implements [A Neural Algorithm of Artistic Style](http://arxiv.org/abs/1508.06576) [1].
 
 Dependencies:
-- [Python](https://www.python.org) 2.7 or 3.5+
-- [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 2.7 or 3.5+
 - Python packages [matplotlib](http://matplotlib.org), [numpy](http://www.numpy.org), [Pillow](https://python-pillow.org), [scipy](http://www.scipy.org), [shared_ndarray](https://github.com/crowsonkb/shared_ndarray), [six](https://pythonhosted.org/six/)
+- [Python](https://www.python.org) 3.6+
+- [Caffe](http://caffe.berkeleyvision.org), with pycaffe compiled for Python 3.6+
 
-The current preferred Python distribution for `style_transfer` is [Anaconda](https://www.continuum.io/downloads) (Python 3.6 version). `style_transfer` will run faster with Anaconda than with other Python distributions due to its inclusion of the [MKL](https://software.intel.com/en-us/intel-mkl) BLAS (mathematics) library. In addition, if you are running Caffe without a GPU, `style_transfer` will run a great deal faster if compiled with MKL (`BLAS := mkl` in `Makefile.config`).
+The current preferred Python distribution for `style_transfer` is [Anaconda](https://www.continuum.io/downloads) (Python 3.6+ version). `style_transfer` will run faster with Anaconda than with other Python distributions due to its inclusion of the [MKL](https://software.intel.com/en-us/intel-mkl) BLAS (mathematics) library. In addition, if you are running Caffe without a GPU, `style_transfer` will run a great deal faster if compiled with MKL (`BLAS := mkl` in `Makefile.config`).
 
 [Cloud computing images](https://github.com/crowsonkb/style_transfer/wiki/Cloud-computing-images) are available with `style_transfer` and its dependencies preinstalled.
 
@@ -37,10 +37,6 @@ The obligatory [Golden Gate Bridge](https://raw.githubusercontent.com/jcjohnson/
 
 ## Installation
 
-*Python 2 support is relatively untested. Please feel free to report issues! Be sure to specify which Python version you are using if you report an issue.*
-
-*If you use pycaffe for other things, you might want to build pycaffe for Python 3 in a second copy of Caffe so you don't break things using Python 2.*
-
 ### pycaffe and Anaconda (Python 3.6 version)
 
 On OS X (with Homebrew-provided Boost.Python):
@@ -56,28 +52,30 @@ PYTHON_LIB := $(ANACONDA_HOME)/lib
 
 The exact name of the Boost.Python library will differ on Linux but the rest should be the same.
 
-### Building pycaffe for Python 3.6 (OS X)
+### Building pycaffe for Python 3.7 (OS X)
 
 On OS X, you can install Python 3 and Boost.Python using [Homebrew](http://brew.sh):
 
 ```
 brew install python3
-brew install boost-python --with-python3
+brew install boost-python
 ```
 
-Then insert these lines into Caffe's `Makefile.config` to build against the Homebrew-provided Python 3.6:
+Then insert these lines into Caffe's `Makefile.config` to build against the Homebrew-provided Python 3.7:
 
 ```
-PYTHON_DIR := /usr/local/opt/python3/Frameworks/Python.framework/Versions/3.6
-PYTHON_LIBRARIES := boost_python3 python3.6m
-PYTHON_INCLUDE := $(PYTHON_DIR)/include/python3.6m \
-	/usr/local/lib/python3.6/site-packages/numpy/core/include
+PYTHON_DIR := /usr/local/opt/python3/Frameworks/Python.framework/Versions/3.7
+PYTHON_LIBRARIES := boost_python37 python3.7m
+PYTHON_INCLUDE := $(PYTHON_DIR)/include/python3.7m \
+	/usr/local/lib/python3.7/site-packages/numpy/core/include
 PYTHON_LIB := $(PYTHON_DIR)/lib
 ```
 
 `make pycaffe` ought to compile the Python 3 bindings now.
 
 ### Building pycaffe for Python 3.5 (Ubuntu 16.04)
+
+*Note that Python 3.6+ is required now and these instructions need to be updated.*
 
 On Ubuntu 16.04, follow Caffe's [Ubuntu 15.10/16.04 install guide](https://github.com/BVLC/caffe/wiki/Ubuntu-16.04-or-15.10-Installation-Guide). The required `Makefile.config` lines for Python 3.5 are:
 
