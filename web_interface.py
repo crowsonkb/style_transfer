@@ -85,11 +85,12 @@ async def send_message(app, msg):
 async def process_events(app):
     while True:
         event = await app.event_queue.get()
-        msg = asdict(event)
-        msg['_type'] = type(event).__name__
-        if 'image' in msg:
-            msg['image'] = pil_to_data_url(msg['image'], **app.image_encode_settings)
-        await send_message(app, msg)
+        if app.wss:
+            msg = asdict(event)
+            msg['_type'] = type(event).__name__
+            if 'image' in msg:
+                msg['image'] = pil_to_data_url(msg['image'], **app.image_encode_settings)
+            await send_message(app, msg)
 
 
 class WebInterface:
