@@ -73,6 +73,12 @@ PYTHON_LIB := $(PYTHON_DIR)/lib
 
 `make pycaffe` ought to compile the Python 3 bindings now.
 
+Note that on macOS you currently have to set an environment variable before running `style_transfer` to prevent a crash on forking:
+
+```
+export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
+```
+
 ### Building pycaffe for Python 3.5 (Ubuntu 16.04)
 
 *Note that Python 3.6+ is required now and these instructions need to be updated.*
