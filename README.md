@@ -39,7 +39,7 @@ The obligatory [Golden Gate Bridge](https://raw.githubusercontent.com/jcjohnson/
 
 ### pycaffe and Anaconda (Python 3.6 version)
 
-On OS X (with Homebrew-provided Boost.Python):
+On macOS (with Homebrew-provided Boost.Python):
 
 ```
 ANACONDA_HOME := $(HOME)/anaconda3
@@ -52,9 +52,9 @@ PYTHON_LIB := $(ANACONDA_HOME)/lib
 
 The exact name of the Boost.Python library will differ on Linux but the rest should be the same.
 
-### Building pycaffe for Python 3.7 (OS X)
+### Building pycaffe for Python 3.7 (macOS)
 
-On OS X, you can install Python 3 and Boost.Python using [Homebrew](http://brew.sh):
+On macOS, you can install Python 3 and Boost.Python using [Homebrew](http://brew.sh):
 
 ```
 brew install python3
