@@ -3,18 +3,19 @@ let ws;
 
 
 function setWithDataURL(url, elem) {
+    let isFirefox = navigator.userAgent.search("Firefox") > -1;
     let img = $("<img>");
-    let h, w;
+    img.attr("class", "replace");
     img[0].onload = () => {
-        h = img[0].naturalHeight;
-        w = img[0].naturalWidth;
-        img.attr("class", "replace");
+        let h = img[0].naturalHeight;
+        let w = img[0].naturalWidth;
         let scale = parseInt($(elem).css("width")) / Math.max(h, w);
         img.attr("height", Math.min(h, h * scale));
         img.attr("width", Math.min(w, w * scale));
-        $("#" + elem.id + " .replace").replaceWith(img);
+        if (!isFirefox) $(`#${elem.id} .replace`).replaceWith(img);
     };
     img.attr("src", url);
+    if (isFirefox) $(`#${elem.id} .replace`).replaceWith(img);
 }
 
 
