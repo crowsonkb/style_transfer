@@ -1,3 +1,5 @@
+"use strict";
+
 let iterationFinished = false;
 let ws;
 
