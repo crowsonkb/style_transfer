@@ -87,7 +87,6 @@ def parse_args(state_obj=None):
         arg('--display', default='browser', choices=['browser', 'gui', 'none'],
             help='the display method to use'),
         arg('--browser', default=None, help='the web browser to open the web interface in'),
-        arg('--prompt', action='store_true', help='enable the experimental prompt'),
         arg('--model', default='vgg19.prototxt',
             help='the Caffe deploy.prototxt for the model to use'),
         arg('--weights', default='vgg19.caffemodel',

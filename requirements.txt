@@ -5,7 +5,6 @@ dataclasses>=0.6;python_version<"3.7"
 matplotlib>=2.0.0
 numpy>=1.11.1
 Pillow>=3.3.1
-prompt_toolkit>=1.0.13<2.0
 PyWavelets>=0.5.2
 shared-ndarray>=1.1.1
 scipy>=0.18.0

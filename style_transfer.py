@@ -32,7 +32,6 @@ from config_system import ffloat, parse_args
 import log_utils
 from num_utils import axpy, gram_matrix, norm2, normalize, p_norm, resize, roll2, tv_norm, swt_norm
 from optimizers import AdamOptimizer, LBFGSOptimizer
-import prompt
 import web_interface
 
 
@@ -764,8 +763,6 @@ class StyleTransfer:
             if callback is not None:
                 msg = callback(step=step, update_size=update_size, loss=loss, tv_loss=tv_loss,
                                image=self.current_output)
-                if isinstance(msg, prompt.Skip):
-                    break
 
             if self.window is not None:
                 self.window.display(self.current_output)
@@ -1069,9 +1066,6 @@ def main():
         aux_image = Image.open(ARGS.aux_image).convert('RGB')
 
     cli, cli_resp = None, None
-    if ARGS.prompt:
-        cli = prompt.Prompt(RUN, STATE)
-        cli_resp = prompt.PromptResponder(cli.q, ARGS)
 
     url = 'http://127.0.0.1:%d/' % ARGS.port
     progress_args = {}
@@ -1096,8 +1090,6 @@ def main():
         print()
     finally:
         STATS.dump()
-        if ARGS.prompt:
-            cli.stop()
 
     if transfer.current_output:
         output_image = ARGS.output_image
