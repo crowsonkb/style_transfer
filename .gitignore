@@ -9,5 +9,4 @@ inputs
 *.csv
 .updated
 tmp
-
-config.py
+/config.py
