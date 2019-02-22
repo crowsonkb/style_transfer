@@ -25,7 +25,7 @@ ENV PATH=/root/anaconda3/bin:"$PATH"
 WORKDIR /root/caffe
 RUN git clone --depth 1 https://github.com/BVLC/caffe .
 COPY Makefile.config .
-RUN make -j"$(nproc)" all pycaffe
+RUN make -j"$(nproc)" all pycaffe test && make distribute
 
 # style_transfer
 WORKDIR /root/style_transfer
