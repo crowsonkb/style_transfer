@@ -51,6 +51,8 @@ def parse_args(state_obj=None):
         arg('--max-style-size', type=int, help='the maximum style size'),
         arg('--style-scale-up', default=False, action='store_true',
             help='allow scaling style images up'),
+        arg('--style-multiscale', '-sm', type=int, nargs=2, metavar=('MIN_SCALE', 'MAX_SCALE'),
+            default=None, help='combine styles computed at all scales into a single style'),
         arg('--tile-size', type=int, default=512, help='the maximum rendering tile size'),
         arg('--optimizer', '-o', default='adam', choices=['adam', 'lbfgs'],
             help='the optimizer to use'),

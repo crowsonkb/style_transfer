@@ -476,13 +476,48 @@ class CaffeModel:
         # Prepare Gram matrices from style images
         if roll is None:
             print('Preprocessing the style image(s)...')
-        for image in style_images:
+
+        sizes = [None]
+        if ARGS.style_multiscale:
+            vmin, vmax = ARGS.style_multiscale
+            size = vmax
+            sizes = [vmax]
+            while True:
+                size = int(round(size / np.sqrt(2)))
+                if size < max(32, vmin):
+                    break
+                sizes.append(size)
+
+        if not self.styles:
             grams = {}
-            self.set_image(image)
-            roll2(self.img, roll)
-            feats = self.prepare_features(pool, style_layers, tile_size, passes=1)
-            for layer in feats:
-                grams[layer] = gram_matrix(feats[layer])
+            count = 0
+            for i, image in enumerate(style_images):
+                scale_too_big_cond = False
+                for size in reversed(sizes):
+                    if scale_too_big_cond:
+                        break
+                    if size:
+                        image_scaled = resize_to_fit(image, size)
+                        if max(image_scaled.size) == max(image.size):
+                            scale_too_big_cond = True
+                        if min(image_scaled.size) < 32:
+                            continue
+                        self.set_image(image_scaled)
+                        h, w = image_scaled.size
+                        print('Processing style {} at {}x{}.'.format(i + 1, h, w))
+                    else:
+                        self.set_image(image)
+                    roll2(self.img, roll)
+                    feats = self.prepare_features(pool, style_layers, tile_size, passes=1)
+                    for layer in feats:
+                        gram = gram_matrix(feats[layer])
+                        if layer not in grams:
+                            grams[layer] = gram
+                        else:
+                            grams[layer] += gram
+                    count += 1
+            for gram in grams.values():
+                gram /= count
             self.styles.append(StyleData(grams))
 
         # Prepare feature maps from content image
@@ -693,7 +728,10 @@ class StyleTransfer:
         style_layers, style_weight = self.parse_weights(ARGS.style_layers, 1)
         dd_layers, dd_weight = self.parse_weights(ARGS.dd_layers, ARGS.dd_weight)
 
-        self.model.contents, self.model.styles = [], []
+        self.model.contents = []
+        if not ARGS.style_multiscale:
+            self.model.styles = []
+
         if ARGS.jitter:
             self.model.preprocess_images(self.pool, [], style_images, [], style_layers,
                                          ARGS.tile_size)
@@ -801,7 +839,9 @@ class StyleTransfer:
             print('\nScale %d, image size %dx%d.\n' % (i + 1, w, h))
             style_scaled = []
             for image in style_images:
-                if ARGS.style_scale >= 32:
+                if ARGS.style_multiscale:
+                    style_scaled.append(image)
+                elif ARGS.style_scale >= 32:
                     style_scaled.append(resize_to_fit(image, ARGS.style_scale, scale_up=True))
                 else:
                     style_size = round(size * ARGS.style_scale)
