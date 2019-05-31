@@ -39,7 +39,7 @@ def symm(a, b, c):
 
 def norm2(arr):
     """Returns 1/2 the L2 norm squared."""
-    return np.sum(arr**2) / 2
+    return dot(arr, arr) / 2
 
 
 def p_norm(arr, p=2):
@@ -47,8 +47,10 @@ def p_norm(arr, p=2):
     if p == 1:
         return np.sum(abs(arr)), np.sign(arr)
     if p == 2:
-        return np.sum(arr**2), 2 * arr
-    return np.sum(abs(arr)**p), p * np.sign(arr) * abs(arr)**(p - 1)
+        return dot(arr, arr), 2 * arr
+    abs_arr = abs(arr)
+    abs_arr_p1 = abs_arr**(p - 1)
+    return dot(abs_arr_p1, abs_arr), p * np.sign(arr) * abs_arr_p1
 
 
 def normalize(arr):
