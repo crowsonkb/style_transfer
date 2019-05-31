@@ -30,6 +30,13 @@ def axpy(a, x, y):
     return y
 
 
+# pylint: disable=no-member
+def symm(a, b, c):
+    """Sets c = a @ b for C-contiguous float32 matrices a, b, and c; a is symmetric."""
+    blas.ssymm(1, a.T, b.T, 0, c.T, side=1, overwrite_c=1)
+    return c
+
+
 def norm2(arr):
     """Returns 1/2 the L2 norm squared."""
     return np.sum(arr**2) / 2

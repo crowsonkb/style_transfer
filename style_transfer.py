@@ -30,7 +30,8 @@ from shared_ndarray import SharedNDArray
 
 from config_system import ffloat, parse_args
 import log_utils
-from num_utils import axpy, gram_matrix, norm2, normalize, p_norm, resize, roll2, tv_norm, swt_norm
+from num_utils import (axpy, gram_matrix, norm2, normalize, p_norm, resize,
+                       roll2, symm, tv_norm, swt_norm)
 from optimizers import AdamOptimizer, LBFGSOptimizer
 import web_interface
 
@@ -565,7 +566,8 @@ class CaffeModel:
                 feat = self.data[layer].reshape((n, mh * mw))
                 gram_diff = current_gram - style.grams[layer]
                 s_grad = self._arr_pool.array_like(feat)
-                np.dot(gram_diff, feat, s_grad)
+                # np.dot(gram_diff, feat, s_grad)
+                symm(gram_diff, feat, s_grad)
                 s_grad = s_grad.reshape((n, mh, mw))
                 loss += lw * style_weight[layer] * norm2(gram_diff) / len(self.styles) / 2
                 axpy(lw * style_weight[layer] / len(self.styles), normalize(s_grad),
