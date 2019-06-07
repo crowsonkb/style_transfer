@@ -8,6 +8,7 @@ from PIL import Image
 from PIL.Image import NEAREST, BILINEAR, BICUBIC, LANCZOS  # pylint: disable=unused-import
 import pywt
 from scipy.linalg import blas
+from skimage.transform import EuclideanTransform, warp
 
 # Machine epsilon for float32
 EPS = np.finfo(np.float32).eps
@@ -132,10 +133,22 @@ def roll_by_1(arr, shift, axis):
     return arr
 
 
-def roll2(arr, xy):
-    """Translates an array in-place by the shift xy, wrapping at the edges."""
-    if xy is not None and np.any(xy != 0):
-        arr[...] = np.roll(arr, xy, axis=(-1, -2))
+# def roll2(arr, xy):
+#     """Translates an array in-place by the shift xy, wrapping at the edges."""
+#     if xy is not None and np.any(xy != 0):
+#         arr[...] = np.roll(arr, xy, axis=(-1, -2))
+#     return arr
+
+
+def roll2(arr, xy, order=1):
+    print(xy)
+    if xy is None or (xy[0] == 0 and xy[1] == 0):
+        return arr
+    tf = EuclideanTransform(translation=tuple(reversed(xy)))
+    hwc = arr.transpose((1, 2, 0))
+    tmp = warp(hwc, tf, order=order, mode='wrap', clip=False,
+               preserve_range=True)
+    arr[...] = tmp.transpose((2, 0, 1))
     return arr
 
 
