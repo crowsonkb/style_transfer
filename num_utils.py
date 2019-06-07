@@ -44,9 +44,17 @@ def scal(a, x):
 
 
 # pylint: disable=no-member
+def syrk(a, alpha=1):
+    """Returns alpha * a @ a.T for float alpha and float32 C-contiguous matrix a.
+    The result is the lower triangular part of a symmetric matrix."""
+    return blas.ssyrk(alpha, a.T, trans=1).T
+
+
+# pylint: disable=no-member
 def symm(a, b, c):
-    """Sets c = a @ b for C-contiguous float32 matrices a, b, and c; a is symmetric."""
-    blas.ssymm(1, a.T, b.T, 0, c.T, side=1, overwrite_c=1)
+    """Sets c = a @ b for C-contiguous float32 matrices a, b, and c.
+    a is symmetric and only the lower triangular part will be looked at."""
+    blas.ssymm(1, a.T, b.T, 0, c.T, overwrite_c=1, side=1)
     return c
 
 
@@ -130,7 +138,8 @@ def gram_matrix(feat):
     """Computes the Gram matrix corresponding to a feature map."""
     n, mh, mw = feat.shape
     feat = feat.reshape((n, mh * mw))
-    return np.dot(feat, feat.T) / np.float32(feat.size)
+    # return np.dot(feat, feat.T) / np.float32(feat.size)
+    return syrk(feat, alpha=1 / feat.size)
 
 
 def tv_norm(x, beta=2):
