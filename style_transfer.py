@@ -9,8 +9,8 @@
 from __future__ import division
 
 from argparse import Namespace
-from collections import namedtuple
 import csv
+from dataclasses import astuple, make_dataclass
 from datetime import datetime
 from functools import partial
 import io
@@ -137,17 +137,24 @@ class LayerIndexer:
         getattr(self.net.blobs[key], self.attr)[0] = value
 
 
-FeatureMapRequest = namedtuple('FeatureMapRequest', 'resp img layers')
-FeatureMapResponse = namedtuple('FeatureMapResponse', 'resp features')
-SCGradRequest = namedtuple('SCGradRequest',
-                           '''resp img roll start content_layers style_layers dd_layers
-                           layer_weights content_weight style_weight dd_weight''')
-SCGradResponse = namedtuple('SCGradResponse', 'resp loss grad')
-SetContentsAndStyles = namedtuple('SetContentsAndStyles', 'contents styles')
-SetThreadCount = namedtuple('SetThreadCount', 'threads')
+def make_msg_type(cls_name, fields):
+    """Makes dataclass-based message types for IPC."""
+    if isinstance(fields, str):
+        fields = fields.split()
+    return make_dataclass(cls_name, fields, namespace={'__module__': __name__})
 
-ContentData = namedtuple('ContentData', 'features')
-StyleData = namedtuple('StyleData', 'grams')
+
+FeatureMapRequest = make_msg_type('FeatureMapRequest', 'resp img layers')
+FeatureMapResponse = make_msg_type('FeatureMapResponse', 'resp features')
+SCGradRequest = make_msg_type('SCGradRequest',
+                              'resp img roll start content_layers style_layers '
+                              'dd_layers layer_weights content_weight '
+                              'style_weight dd_weight')
+SCGradResponse = make_msg_type('SCGradResponse', 'resp loss grad')
+SetContentsAndStyles = make_msg_type('SetContentsAndStyles', 'contents styles')
+SetThreadCount = make_msg_type('SetThreadCount', 'threads')
+ContentData = make_msg_type('ContentData', 'features')
+StyleData = make_msg_type('StyleData', 'grams')
 
 
 class TileWorker:
@@ -433,7 +440,7 @@ class CaffeModel:
                 pool.request(FeatureMapRequest(start, SharedNDArray.copy(tile), layers))
         pool.reset_next_worker()
         for _ in range(np.prod(ntiles)):
-            start, feats_tile = pool.resp_q.get()
+            start, feats_tile = astuple(pool.resp_q.get())
             for layer, feat in feats_tile.items():
                 scale, _ = self.layer_info(layer)
                 start_f = start // scale
@@ -617,7 +624,7 @@ class CaffeModel:
                                   content_weight, style_weight, dd_weight))
         pool.reset_next_worker()
         for _ in range(np.prod(ntiles)):
-            (start, end), loss_tile, grad_tile = pool.resp_q.get()
+            (start, end), loss_tile, grad_tile = astuple(pool.resp_q.get())
             loss += loss_tile
             grad[:, start[0]:end[0], start[1]:end[1]] = grad_tile.array
             grad_tile.unlink()
