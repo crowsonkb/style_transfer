@@ -31,7 +31,7 @@ from shared_ndarray import SharedNDArray
 from config_system import ffloat, parse_args
 import log_utils
 from num_utils import (saxpy, gram_matrix, norm2, normalize, p_norm, resize,
-                       roll2, ssymm, tv_norm, swt_norm)
+                       roll2, ssymm, tv_norm, swt_norm, consume)
 from optimizers import AdamOptimizer, LBFGSOptimizer
 import web_interface
 
@@ -309,9 +309,9 @@ class TileWorkerPool:
             self.resp_q.get()
 
         for shms in content_shms:
-            _ = [shm.unlink() for shm in shms.features.values()]
+            consume(shm.unlink() for shm in shms.features.values())
         for shms in style_shms:
-            _ = [shm.unlink() for shm in shms.grams.values()]
+            consume(shm.unlink() for shm in shms.grams.values())
 
     def set_thread_count(self, threads):
         """Sets the MKL thread count per worker process."""

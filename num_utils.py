@@ -1,5 +1,6 @@
 """Numerical utilities."""
 
+from collections import deque
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import math
 
@@ -102,7 +103,7 @@ def resize(a, hw, method=LANCZOS):
 
     with ThreadPoolExecutor(max_workers=3) as ex:
         futs = [ex.submit(_resize, a[i], b[i]) for i in range(ch)]
-        _ = [fut.result() for fut in futs]
+        consume(fut.result() for fut in futs)
 
     return b
 
@@ -193,3 +194,8 @@ def _swt_norm(x, wavelet, level, p=2):
         inv.append(pywt.iswt2(coeffs, wavelet)[pw[1][0]:pw[1][0] + x.shape[1],
                                                pw[2][0]:pw[2][0] + x.shape[2]])
     return p_norm(np.stack(inv), p)
+
+
+def consume(iterable):
+    """Consume the iterable."""
+    deque(iterable, maxlen=0)
