@@ -23,11 +23,24 @@ def dot(x, y):
 
 # pylint: disable=no-member
 def axpy(a, x, y):
-    """Sets y = a*x + y for float a and float32 arrays x, y and returns y."""
+    """Sets y = a*x + y for float a and float32 arrays x, y; returns y."""
     y_ = blas.saxpy(x.ravel(), y.ravel(), a=a).reshape(y.shape)
     if y is not y_:
         y[...] = y_
     return y
+
+
+# pylint: disable=no-member
+def asum(x):
+    """Returns the sum of the absolute values of the given float32 array."""
+    return blas.sasum(x.ravel())
+
+
+# pylint: disable=no-member
+def scal(a, x):
+    """Sets x = a*x for float a and float32 array x, and returns x."""
+    blas.sscal(a, x.ravel())
+    return x
 
 
 # pylint: disable=no-member
@@ -55,7 +68,7 @@ def p_norm(arr, p=2):
 
 def normalize(arr):
     """Normalizes an array in-place to have an L1 norm equal to its size."""
-    arr /= np.mean(abs(arr)) + EPS
+    scal(1 / (asum(arr) / arr.size + EPS), arr)
     return arr
 
 
