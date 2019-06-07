@@ -30,8 +30,8 @@ from shared_ndarray import SharedNDArray
 
 from config_system import ffloat, parse_args
 import log_utils
-from num_utils import (axpy, gram_matrix, norm2, normalize, p_norm, resize,
-                       roll2, symm, tv_norm, swt_norm)
+from num_utils import (saxpy, gram_matrix, norm2, normalize, p_norm, resize,
+                       roll2, ssymm, tv_norm, swt_norm)
 from optimizers import AdamOptimizer, LBFGSOptimizer
 import web_interface
 
@@ -460,7 +460,7 @@ class CaffeModel:
                 if i == 0:
                     features[layer] = feats[layer] / passes
                 else:
-                    axpy(1 / passes, feats[layer], features[layer])
+                    saxpy(1 / passes, feats[layer], features[layer])
             self.roll(-xy)
             self.roll_features(features, -xy)
         return features
@@ -557,7 +557,7 @@ class CaffeModel:
                 feat = content.features[layer][:, start_[0]:end[0], start_[1]:end[1]]
                 c_grad = self.data[layer] - feat
                 loss += lw * content_weight[layer] * norm2(c_grad)
-                axpy(lw * content_weight[layer], normalize(c_grad), self.diff[layer])
+                saxpy(lw * content_weight[layer], normalize(c_grad), self.diff[layer])
 
             def eval_s_grad(layer, style):
                 nonlocal loss
@@ -566,11 +566,10 @@ class CaffeModel:
                 feat = self.data[layer].reshape((n, mh * mw))
                 gram_diff = current_gram - style.grams[layer]
                 s_grad = self._arr_pool.array_like(feat)
-                # np.dot(gram_diff, feat, s_grad)
-                symm(gram_diff, feat, s_grad)
+                ssymm(gram_diff, feat, c=s_grad)
                 s_grad = s_grad.reshape((n, mh, mw))
                 loss += lw * style_weight[layer] * norm2(gram_diff) / len(self.styles)
-                axpy(lw * style_weight[layer] / len(self.styles), normalize(s_grad),
+                saxpy(lw * style_weight[layer] / len(self.styles), normalize(s_grad),
                      self.diff[layer])
 
             # Compute the content and style gradients
@@ -582,7 +581,7 @@ class CaffeModel:
                     eval_s_grad(layer, style)
             if layer in dd_layers:
                 loss -= lw * dd_weight[layer] * norm2(self.data[layer])
-                axpy(-lw * dd_weight[layer], normalize(self.data[layer]), self.diff[layer])
+                saxpy(-lw * dd_weight[layer], normalize(self.data[layer]), self.diff[layer])
 
             # Run the model backward
             if i + 1 == len(layers):
@@ -690,27 +689,27 @@ class StyleTransfer:
         if ARGS.tv_weight:
             tv_loss, tv_grad = tv_norm(self.model.img / 127.5, beta=ARGS.tv_power)
             loss += lw * ARGS.tv_weight * tv_loss
-            axpy(lw * ARGS.tv_weight, tv_grad, grad)
+            saxpy(lw * ARGS.tv_weight, tv_grad, grad)
 
         # Compute SWT norm and gradient
         if ARGS.swt_weight:
             swt_loss, swt_grad = swt_norm(self.model.img / 127.5,
                                           ARGS.swt_wavelet, ARGS.swt_levels, p=ARGS.swt_power)
             loss += lw * ARGS.swt_weight * swt_loss
-            axpy(lw * ARGS.swt_weight, swt_grad, grad)
+            saxpy(lw * ARGS.swt_weight, swt_grad, grad)
 
         # Compute p-norm regularizer gradient (from jcjohnson/cnn-vis and [3])
         if ARGS.p_weight:
             p_loss, p_grad = p_norm((self.model.img + self.model.mean - 127.5) / 127.5,
                                     p=ARGS.p_power)
             loss += lw * ARGS.p_weight * p_loss
-            axpy(lw * ARGS.p_weight, p_grad, grad)
+            saxpy(lw * ARGS.p_weight, p_grad, grad)
 
         # Compute auxiliary image gradient
         if self.aux_image is not None:
             aux_grad = (self.model.img - self.aux_image) / 127.5
             loss += lw * ARGS.aux_weight * norm2(aux_grad)
-            axpy(lw * ARGS.aux_weight, aux_grad, grad)
+            saxpy(lw * ARGS.aux_weight, aux_grad, grad)
 
         self.model.img = old_img
         return loss, grad

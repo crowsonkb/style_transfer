@@ -5,7 +5,7 @@
 from average import EWMA
 import numpy as np
 
-from num_utils import axpy, BILINEAR, dot, EPS, resize, roll2
+from num_utils import saxpy, BILINEAR, sdot, EPS, resize, roll2
 
 
 class AdamOptimizer:
@@ -35,7 +35,7 @@ class AdamOptimizer:
         self.g1.update(grad)
         self.g2.update(grad**2)
         step = self.g1.get() / (np.sqrt(self.g2.get()) + EPS)
-        axpy(-step_size, step, self.params)
+        saxpy(-step_size, step, self.params)
 
         # Iterate averaging
         self.p1.update(self.params)
@@ -94,7 +94,7 @@ class LBFGSOptimizer:
 
     def store_curvature_pair(self, s, y):
         """Updates the L-BFGS memory with a new curvature pair."""
-        sy = dot(s, y)
+        sy = sdot(s, y)
         if sy > 1e-10:
             self.sk.append(s)
             self.yk.append(y)
@@ -107,16 +107,16 @@ class LBFGSOptimizer:
         p = p.copy()
         alphas = []
         for s, y, sy in zip(reversed(self.sk), reversed(self.yk), reversed(self.syk)):
-            alphas.append(dot(s, p) / sy)
-            axpy(-alphas[-1], y, p)
+            alphas.append(sdot(s, p) / sy)
+            saxpy(-alphas[-1], y, p)
 
         if self.sk:
             sy, y = self.syk[-1], self.yk[-1]
-            p *= sy / dot(y, y)
+            p *= sy / sdot(y, y)
 
         for s, y, sy, alpha in zip(self.sk, self.yk, self.syk, reversed(alphas)):
-            beta = dot(y, p) / sy
-            axpy(alpha - beta, s, p)
+            beta = sdot(y, p) / sy
+            saxpy(alpha - beta, s, p)
 
         return p
 

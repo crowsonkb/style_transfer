@@ -16,30 +16,28 @@ POOL = ProcessPoolExecutor(1)
 
 
 # pylint: disable=no-member
-def dot(x, y):
+def sdot(x, y):
     """Returns the dot product of two float32 arrays with the same shape."""
     return blas.sdot(x.ravel(), y.ravel())
 
 
 # pylint: disable=no-member
-def axpy(a, x, y):
+def saxpy(a, x, y):
     """Sets y = a*x + y for float a and float32 arrays x, y; returns y."""
-    y_ = blas.saxpy(x.ravel(), y.ravel(), a=a).reshape(y.shape)
-    if y is not y_:
-        y[...] = y_
+    y[...] = blas.saxpy(x.ravel(), y.ravel(), a=a).reshape(y.shape)
     return y
 
 
 # pylint: disable=no-member
-def asum(x):
+def sasum(x):
     """Returns the sum of the absolute values of the given float32 array."""
     return blas.sasum(x.ravel())
 
 
 # pylint: disable=no-member
-def scal(a, x):
+def sscal(a, x):
     """Sets x = a*x for float a and float32 array x, and returns x."""
-    blas.sscal(a, x.ravel())
+    x[...] = blas.sscal(a, x.ravel()).reshape(x.shape)
     return x
 
 
@@ -51,14 +49,14 @@ def tril_to_symm(a):
 
 
 # pylint: disable=no-member
-def syrk(a, alpha=1):
+def ssyrk(a, alpha=1):
     """Returns alpha * a @ a.T for float alpha and float32 C-contiguous matrix a.
     The result is the lower triangular part of a symmetric matrix."""
     return blas.ssyrk(alpha, a.T, trans=1).T
 
 
 # pylint: disable=no-member
-def symm(a, b, c=None):
+def ssymm(a, b, c=None):
     """Sets c = a @ b for C-contiguous float32 matrices a, b, and c.
     a is symmetric and only the lower triangular part will be looked at."""
     if c is None:
@@ -69,24 +67,23 @@ def symm(a, b, c=None):
 
 def norm2(arr):
     """Returns 1/2 the L2 norm squared."""
-    return dot(arr, arr) / 2
+    return sdot(arr, arr) / 2
 
 
 def p_norm(arr, p=2):
     """Returns the pth power of the p-norm and its gradient."""
     if p == 1:
-        return asum(arr), np.sign(arr)
+        return sasum(arr), np.sign(arr)
     if p == 2:
-        return dot(arr, arr), 2 * arr
+        return sdot(arr, arr), 2 * arr
     abs_arr = abs(arr)
     abs_arr_p1 = abs_arr**(p - 1)
-    return dot(abs_arr_p1, abs_arr), p * np.sign(arr) * abs_arr_p1
+    return sdot(abs_arr_p1, abs_arr), p * np.sign(arr) * abs_arr_p1
 
 
 def normalize(arr):
     """Normalizes an array in-place to have an L1 norm equal to its size."""
-    scal(1 / (asum(arr) / arr.size + EPS), arr)
-    return arr
+    return sscal(1 / (sasum(arr) / arr.size + EPS), arr)
 
 
 def resize(a, hw, method=LANCZOS):
@@ -147,8 +144,7 @@ def gram_matrix(feat):
     """Computes the Gram matrix corresponding to a feature map."""
     n, mh, mw = feat.shape
     feat = feat.reshape((n, mh * mw))
-    # return np.dot(feat, feat.T) / np.float32(feat.size)
-    return syrk(feat, alpha=1 / feat.size)
+    return ssyrk(feat, alpha=1/feat.size)
 
 
 def tv_norm(x, beta=2):
