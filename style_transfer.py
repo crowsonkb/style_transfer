@@ -198,7 +198,7 @@ class TileWorker:
     def process_one_request(self):
         """Receives one request from the master process and acts on it."""
         req = self.req_q.get()
-        # logger.debug('Started request %s', req.__class__.__name__)
+        logger.debug('Started request %s', req)
         layers = []
 
         if isinstance(req, FeatureMapRequest):
@@ -239,7 +239,7 @@ class TileWorker:
         if isinstance(req, SetThreadCount):
             set_thread_count(req.threads)
 
-        # logger.debug('Finished request %s', req.__class__.__name__)
+        logger.debug('Finished request %s', req)
 
 
 class TileWorkerPoolError(Exception):
@@ -292,17 +292,17 @@ class TileWorkerPool:
         """Propagates feature maps and Gram matrices to all TileWorkers."""
         content_shms, style_shms = [], []
 
+        for content in contents:
+            features_shm = {layer: SharedNDArray.copy(content.features[layer])
+                            for layer in content.features}
+            content_shms.append(ContentData(features_shm))
+
+        for style in styles:
+            grams_shm = {layer: SharedNDArray.copy(style.grams[layer])
+                         for layer in style.grams}
+            style_shms.append(StyleData(grams_shm))
+
         for worker in self.workers:
-            for content in contents:
-                features_shm = {layer: SharedNDArray.copy(content.features[layer])
-                                for layer in content.features}
-                content_shms.append(ContentData(features_shm))
-
-            for style in styles:
-                grams_shm = {layer: SharedNDArray.copy(style.grams[layer])
-                             for layer in style.grams}
-                style_shms.append(StyleData(grams_shm))
-
             worker.req_q.put(SetContentsAndStyles(content_shms, style_shms))
 
         for worker in self.workers:
