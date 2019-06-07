@@ -189,31 +189,3 @@ def _swt_norm(x, wavelet, level, p=2):
         inv.append(pywt.iswt2(coeffs, wavelet)[pw[1][0]:pw[1][0] + x.shape[1],
                                                pw[2][0]:pw[2][0] + x.shape[2]])
     return p_norm(np.stack(inv), p)
-
-
-# def swt_norm(x, wavelet, level):
-#     """Computes the squared 2-norm of the SWT detail coefficients of the input and its gradient."""
-#     div = 2**math.ceil(math.log2(max(x.shape[1:])))
-#     pw = pad_width(x.shape, (1, div, div))
-#     x_pad = np.pad(x, pw, 'symmetric')
-#     with ProcessPoolExecutor() as ex:
-#         channels = list(ex.map(partial(pywt.swt2, wavelet=wavelet, level=level), x_pad))
-#         for coeffs in channels:
-#             for a, _ in coeffs:
-#                 a[...] = 0
-#         inv = np.stack(ex.map(partial(pywt.iswt2, wavelet=wavelet), channels))
-#     inv = inv[:, pw[1][0]:pw[1][0]+x.shape[1], pw[2][0]:pw[2][0]+x.shape[2]]
-#     return np.sum(inv**2), inv * 2
-
-
-class Normalizer:
-    """Normalizes arrays by a moving average of their absolute mean."""
-    def __init__(self, alpha):
-        self.alpha = alpha
-        self.norms = {}
-
-    def __call__(self, key, arr):
-        if key not in self.norms:
-            self.norms[key] = EWMA(self.alpha)
-        arr /= self.norms[key].update(np.mean(abs(arr))) + EPS
-        return arr
