@@ -5,11 +5,23 @@ from fractions import Fraction
 import math
 import os
 from pathlib import Path
+import re
+import subprocess
 import sys
 
 import numpy as np
 
 CONFIG_PY = Path(__file__).parent.resolve() / 'config.py'
+
+
+def detect_devices():
+    try:
+        gpu_list = subprocess.run(['nvidia-smi', '-L'], stdout=subprocess.PIPE,
+                                  check=True, universal_newlines=True)
+        gpus = list(map(int, re.findall(r'^GPU (\d+)', gpu_list.stdout, re.M)))
+        return gpus if gpus else [-1]
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return [-1]
 
 
 def ffloat(s):
@@ -166,7 +178,7 @@ class AutocallNamespace:
         return 'Autocall' + repr(self.ns)
 
 
-CONFIG_GLOBALS = dict(math=math, np=np)
+CONFIG_GLOBALS = dict(detect_devices=detect_devices, math=math, np=np)
 
 
 def eval_config(config_file):

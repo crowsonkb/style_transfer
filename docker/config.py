@@ -1,2 +1,4 @@
 caffe_path = '/root/caffe'
-devices = [0]
+devices = detect_devices()
+display = 'none'
+div = 8
