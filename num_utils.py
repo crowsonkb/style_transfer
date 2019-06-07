@@ -58,7 +58,7 @@ def norm2(arr):
 def p_norm(arr, p=2):
     """Returns the pth power of the p-norm and its gradient."""
     if p == 1:
-        return np.sum(abs(arr)), np.sign(arr)
+        return asum(arr), np.sign(arr)
     if p == 2:
         return dot(arr, arr), 2 * arr
     abs_arr = abs(arr)
