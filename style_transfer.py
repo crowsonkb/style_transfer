@@ -3,22 +3,18 @@
 """Neural style transfer using Caffe. Implements A Neural Algorithm of Artistic Style
 (http://arxiv.org/abs/1508.06576)."""
 
-# pylint: disable=invalid-name, too-many-arguments, too-many-instance-attributes, too-many-locals
-# pylint: disable=global-statement
-
-from __future__ import division
+# pylint: disable=invalid-name, too-many-arguments, too-many-instance-attributes
+# pylint: too-many-locals, disable=global-statement
 
 from argparse import Namespace
 import csv
 from dataclasses import astuple, make_dataclass
 from datetime import datetime
 from functools import partial
-import io
 import json
 import multiprocessing as mp
 import os
 from pathlib import Path
-import queue
 import sys
 import threading
 import time
@@ -93,6 +89,7 @@ except ImportError:
 
 class StatLogger:
     """Collects per-iteration statistics to be written to a CSV file on exit."""
+
     def __init__(self):
         self.lock = CTX.Lock()
         self.stats = []
@@ -127,6 +124,7 @@ STATS = None
 
 class LayerIndexer:
     """Helper class for accessing feature maps and gradients."""
+
     def __init__(self, net, attr):
         self.net, self.attr = net, attr
 
@@ -159,6 +157,7 @@ StyleData = make_msg_type('StyleData', 'grams')
 
 class TileWorker:
     """Computes feature maps and gradients on the specified device in a separate process."""
+
     def __init__(self, req_q, resp_q, model, device=-1, caffe_path=None):
         self.req_q = req_q
         self.resp_q = resp_q
@@ -256,6 +255,7 @@ class TileWorkerPoolError(Exception):
 
 class TileWorkerPool:
     """A collection of TileWorkers."""
+
     def __init__(self, model, devices, caffe_path=None):
         self.workers = []
         self.req_count = 0
@@ -328,6 +328,7 @@ class TileWorkerPool:
 
 class ArrayPool:
     """A pool of preallocated (C-contiguous) NumPy arrays."""
+
     def __init__(self):
         self.pool = {}
 
@@ -343,6 +344,7 @@ class ArrayPool:
 
 class CaffeModel:
     """A Caffe neural network model."""
+
     def __init__(self, deploy, weights, mean=(0, 0, 0), shapes=None, placeholder=False):
         self.deploy = deploy
         self.weights = weights
@@ -420,7 +422,7 @@ class CaffeModel:
         tile_size = img_size // ntiles
         if np.prod(ntiles) > 1:
             print('Using %dx%d tiles of size %dx%d.' %
-                   (ntiles[1], ntiles[0], tile_size[1], tile_size[0]))
+                  (ntiles[1], ntiles[0], tile_size[1], tile_size[0]))
         features = {}
         for layer in layers:
             scale, channels = self.layer_info(layer)
@@ -650,6 +652,7 @@ class CaffeModel:
 
 class StyleTransfer:
     """Performs style transfer."""
+
     def __init__(self, model):
         self.model = model
         self.layer_weights = {layer: 1.0 for layer in self.model.layers() + ['data']}
