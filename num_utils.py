@@ -58,9 +58,11 @@ def syrk(a, alpha=1):
 
 
 # pylint: disable=no-member
-def symm(a, b, c):
+def symm(a, b, c=None):
     """Sets c = a @ b for C-contiguous float32 matrices a, b, and c.
     a is symmetric and only the lower triangular part will be looked at."""
+    if c is None:
+        c = np.zeros_like(b, order='C')
     blas.ssymm(1, a.T, b.T, 0, c.T, overwrite_c=1, side=1)
     return c
 
