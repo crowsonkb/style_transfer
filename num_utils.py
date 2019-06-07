@@ -43,6 +43,13 @@ def scal(a, x):
     return x
 
 
+def tril_to_symm(a):
+    """Converts a lower triangular matrix in-place to a symmetric matrix."""
+    for i in range(len(a)):
+        a[i, i+1:] = a[i+1:, i]
+    return a
+
+
 # pylint: disable=no-member
 def syrk(a, alpha=1):
     """Returns alpha * a @ a.T for float alpha and float32 C-contiguous matrix a.
