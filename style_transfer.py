@@ -590,7 +590,7 @@ class CaffeModel:
                 s_grad = s_grad.reshape((n, mh, mw))
                 loss += lw * style_weight[layer] * norm2(gram_diff) / len(self.styles)
                 saxpy(lw * style_weight[layer] / len(self.styles), normalize(s_grad),
-                     self.diff[layer])
+                      self.diff[layer])
 
             # Compute the content and style gradients
             if layer in content_layers:
