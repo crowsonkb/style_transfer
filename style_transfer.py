@@ -4,12 +4,13 @@
 (http://arxiv.org/abs/1508.06576)."""
 
 # pylint: disable=invalid-name, too-many-arguments, too-many-instance-attributes
-# pylint: too-many-locals, disable=global-statement
+# pylint: disable=too-many-locals, global-statement
 
 from argparse import Namespace
 import csv
 from dataclasses import astuple, make_dataclass
 from datetime import datetime
+from enum import Enum
 from functools import partial
 import json
 import multiprocessing as mp
@@ -47,19 +48,29 @@ RUN = ''
 STATE = Namespace()
 
 
-def terminal_bg(light=True, dark=False, default=None):
+class BGColor(Enum):
+    """Represents our state of knowledge about the terminal background color."""
+    LIGHT = 1
+    DARK = -1
+    UNKNOWN = 0
+
+
+def terminal_bg():
     """Returns the first argument if the terminal has a light background, the second if it has a
     dark background, and the third if it cannot determine."""
     colorfgbg = os.environ.get('COLORFGBG', '')
     if colorfgbg == '0;15':
-        return light
+        return BGColor.LIGHT
     if colorfgbg == '15;0':
-        return dark
-    return default
+        return BGColor.DARK
+    return BGColor.UNKNOWN
 
 
 def setup_exceptions():
-    scheme = terminal_bg('LightBG', 'Linux', 'Neutral')
+    switch = {BGColor.LIGHT: 'LightBG',
+              BGColor.DARK: 'Linux',
+              BGColor.UNKNOWN: 'Neutral'}
+    scheme = switch[terminal_bg()]
     mode = 'Plain'
     if 'DEBUG' in os.environ:
         mode = 'Verbose'
@@ -967,26 +978,24 @@ def resize_to_fit(image, size, scale_up=False):
 
 def printargs():
     """Prints out all command-line parameters."""
-    bg = terminal_bg()
-    if bg is True:
-        style = 'xcode'
-    elif bg is False:
-        style = 'monokai'
-
+    switch = {BGColor.LIGHT: 'xcode',
+              BGColor.DARK: 'vim',
+              BGColor.UNKNOWN: 'default'}
+    style = switch[terminal_bg()]
     pprint = print
     try:
-        if bg is not None:
-            import pygments
-            from pygments.lexers import Python3Lexer
-            from pygments.formatters import Terminal256Formatter
-            pprint = partial(pygments.highlight, lexer=Python3Lexer(),
-                             formatter=Terminal256Formatter(style=style), outfile=sys.stdout)
+        import pygments
+        from pygments.lexers import Python3Lexer
+        from pygments.formatters import Terminal256Formatter
+        pprint = partial(pygments.highlight, lexer=Python3Lexer(),
+                         formatter=Terminal256Formatter(style=style),
+                         outfile=sys.stdout)
     except ImportError:
         pass
     print('Parameters:')
     for key in sorted(ARGS):
         v = repr(getattr(ARGS, key))
-        print('% 14s: ' % key, end='')
+        print('% 16s: ' % key, end='')
         pprint(v)
     print()
 
